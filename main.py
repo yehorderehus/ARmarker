@@ -15,82 +15,264 @@ from main_helper import main_helper
 
 # Other imports
 import cv2
+import numpy as np
 import webbrowser
+import imageio
+from PIL import Image
 from plyer import filechooser
 #from typing import Optional, overload, Tuple, List, Union # for probably further use
 
 class ARmarkerEngine:
-    def live_processing(self, frame):
+    def __init__(self):
+        self.arucoParams = cv2.aruco.DetectorParameters()
+        self.aruco_dictionaries = [
+            cv2.aruco.DICT_4X4_50,
+            cv2.aruco.DICT_4X4_100,
+            cv2.aruco.DICT_4X4_250,
+            cv2.aruco.DICT_4X4_1000,
+            cv2.aruco.DICT_5X5_50,
+            cv2.aruco.DICT_5X5_100,
+            cv2.aruco.DICT_5X5_250,
+            cv2.aruco.DICT_5X5_1000,
+            cv2.aruco.DICT_6X6_50,
+            cv2.aruco.DICT_6X6_100,
+            cv2.aruco.DICT_6X6_250,
+            cv2.aruco.DICT_6X6_1000,
+            cv2.aruco.DICT_7X7_50,
+            cv2.aruco.DICT_7X7_100,
+            cv2.aruco.DICT_7X7_250,
+            cv2.aruco.DICT_7X7_1000,
+            cv2.aruco.DICT_ARUCO_ORIGINAL,
+            cv2.aruco.DICT_APRILTAG_16h5,
+            cv2.aruco.DICT_APRILTAG_25h9,
+            cv2.aruco.DICT_APRILTAG_36h10,
+            cv2.aruco.DICT_APRILTAG_36h11
+        ]
+    
+    def process(self, frame): # this will be crossroad for aruco / orb
+        self.aruco_detection(frame)
         return frame
     
-    def static_processing(self, frame):
-        return frame
+    def aruco_detection(self, frame):
+        # Loop through the aruco dictionaries
+        for arucoDict in self.aruco_dictionaries:
+            arucoCorners, arucoIds, arucoRejected = cv2.aruco.detectMarkers(frame, cv2.aruco.getPredefinedDictionary(arucoDict), parameters=self.arucoParams)
+            """
+            if self.object_type == "plain":
+                for arucoCorner in range(len(arucoCorners)):
+                    frame = self.plain_augmentation(arucoCorner, frame, self.object)
+            if self.object_type == "volumetric":
+                for arucoCorner in range(len(arucoCorners)):
+                    frame = self.volumetric_augmentation(arucoCorner, frame, self.object)
+            else:
+            """
+                # If no object is selected, encircle the detected marker
+            for corner in arucoCorners:
+                aruco_corners = np.int32(corner).reshape(-1, 2)
 
-class UserApp(MDApp):
+                # Calculate the side length of the detected marker
+                aruco_side_length = int(np.linalg.norm(aruco_corners[0] - aruco_corners[1]))
+                polylines_thickness = int(aruco_side_length * 0.01) # Second parameter is the thickness ratio
+
+                # Draw the polygon around the detected marker
+                cv2.polylines(
+                    frame,
+                    [aruco_corners],
+                    isClosed=True,
+                    color=(0, 255, 0),
+                    thickness=polylines_thickness
+                )
+
+        return frame
+    
+    def plain_augmentation(self, bbox, shot, augment, scale_factor=1.05):
+        top_left = bbox[0][0][0], bbox[0][0][1]
+        top_right = bbox[0][1][0], bbox[0][1][1]
+        bottom_right = bbox[0][2][0], bbox[0][2][1]
+        bottom_left = bbox[0][3][0], bbox[0][3][1]
+
+        # Calculate the center of the detected marker
+        center_x = (top_left[0] + bottom_right[0]) / 2
+        center_y = (top_left[1] + bottom_right[1]) / 2
+
+        # Calculate new corner points for the updated bounding box
+        top_left = int(center_x - scale_factor * (center_x - top_left[0])), int(
+            center_y - scale_factor * (center_y - top_left[1]))
+        top_right = int(center_x + scale_factor * (top_right[0] - center_x)), int(
+            center_y - scale_factor * (center_y - top_right[1]))
+        bottom_right = int(center_x + scale_factor * (bottom_right[0] - center_x)), int(
+            center_y + scale_factor * (bottom_right[1] - center_y))
+        bottom_left = int(center_x - scale_factor * (center_x - bottom_left[0])), int(
+            center_y + scale_factor * (bottom_left[1] - center_y))
+        
+        # Open the rectangular from augment and get its dimensions
+        rectangle = Image.fromarray(augment)
+        width, height = rectangle.size
+        side_length = max(width, height)
+
+        # Calculate position for centering the rectangular on a background
+        x_offset = (side_length - width) // 2
+        y_offset = (side_length - height) // 2
+
+        # Make the background and paste the rectangular onto it
+        background = Image.new("RGB", (side_length, side_length), (0, 0, 0))
+        background.paste(rectangle, (x_offset, y_offset))
+
+        # Convert edited augment to numpy array
+        augment = np.array(background)
+
+        # Find numpy arrays of the corner points of the shot and the augment
+        points_shot = np.array([top_left, top_right, bottom_right, bottom_left])
+        points_augment = np.array([[0, 0], [side_length, 0], [side_length, side_length], [0, side_length]])
+
+        # Calculate the transformation matrix and warp the augment, fill the shot with the processed augment
+        matrix = cv2.getPerspectiveTransform(points_augment.astype(np.float32), points_shot.astype(np.float32))
+        augment = cv2.warpPerspective(augment, matrix, (shot.shape[1], shot.shape[0]))
+        cv2.fillConvexPoly(shot, points_shot.astype(int), (0, 0, 0), 16)
+
+        return augment + shot
+
+    def volumetric_augmentation(self):
+        pass
+
+class UserApp(MDApp):     
     class ContentNavigationDrawer(MDScrollView):
         screen_manager = ObjectProperty()
         nav_drawer = ObjectProperty()
 
-    def live_broadcast(self):
+    def live_broadcast(self):   
         if not cv2.VideoCapture(self.cap_index).isOpened():
-            self.live_broadcast_error()
+            self.error_popup("Camera Error", "Unable to access the camera. Please check the camera connection.")
             self.root.ids.live_frame.texture = None
         else:
-            self.cap = cv2.VideoCapture(self.cap_index)
-            Clock.schedule_interval(self.update_live, 1.0 / 30.0) # Update at 30 FPS through kivy.clock    
+            self.cap = cv2.VideoCapture(self.cap_index)  
 
-    def update_live(self, dt):
-        ret, frame = self.cap.read()
-        frame = ARmarkerEngine().live_processing(frame)
-    
-        if ret:
-            # Convert the OpenCV frame to Kivy texture
-            buf1 = cv2.flip(frame, 0)
-            buf = buf1.tobytes()
-            texture = Texture.create(size=(frame.shape[1], frame.shape[0]), colorfmt='bgr') 
-            texture.blit_buffer(buf, colorfmt='bgr', bufferfmt='ubyte')
+            def update_live(dt):
+                ret, frame = self.cap.read()
 
-            # Update the Image widget with the new frame
-            self.root.ids.live_frame.texture = texture                  
+                if ret:
+                    # Convert and update
+                    texture = self.frame_to_texture(frame)
+                    self.root.ids.live_frame.texture = texture  
+            
+            self.update_live_event = Clock.schedule_interval(update_live, 1.0 / 30.0) # Update at 30 FPS through kivy.clock
 
-    def upload_static_callback(self):
-        file_path = filechooser.open_file(title="Select Media")
+    def update_static_video(self, media):
+        # Open the video file and initialize a flag to control video looping
+        self.cap_video = cv2.VideoCapture(media[0])
+        self.video_loop = True
 
-        if file_path:
-            frame = cv2.imread(file_path[0])
+        def update_video(dt):
+            if hasattr(self, 'cap_video') and self.cap_video.isOpened() and self.video_loop:
+                ret, frame = self.cap_video.read()
 
-            if frame is not None and frame.size > 0:
-                # Flip the frame and process
-                frame = cv2.flip(frame, 0) # 0 for vertical, 1 for horizontal
-                frame = ARmarkerEngine().static_processing(frame)
+                if ret:
+                    # Convert and update
+                    texture = self.frame_to_texture(frame)
+                    self.root.ids.static_frame.texture = texture
+                else:
+                    # Video ended, release the video capture
+                    self.cap_video.set(cv2.CAP_PROP_POS_FRAMES, 0)
 
-                # Convert the OpenCV frame to Kivy texture
-                buf = frame.tobytes()
-                texture = Texture.create(size=(frame.shape[1], frame.shape[0]), colorfmt='bgr')
-                texture.blit_buffer(buf, colorfmt='bgr', bufferfmt='ubyte')
+        self.update_static_video_event = Clock.schedule_interval(update_video, 1.0 / 30.0)  # Update at 30 FPS through kivy.clock
 
-                # Update the Image widget with the new frame
-                self.root.ids.static_frame.texture = texture
-            else:
-                self.root.ids.static_frame.texture = None
-                self.upload_static_error()
+    def update_static_gif(self, media):
+        # Open the GIF file and get its frame rate
+        gif_reader = imageio.get_reader(media[0])
+
+        # If 'fps' is not available in metadata, set a default frame rate
+        try:
+            fps = gif_reader.get_meta_data()['fps']
+        except KeyError:
+            fps = 10
+
+        # Create a list of frames to be processed
+        frames = list(gif_reader)
+
+        # Initialize the frame index and a flag to control GIF looping
+        self.frame_index = 0
+        self.gif_loop = True
+
+        # Define a function to update the static frame
+        def update_gif(dt):
+            if self.gif_loop:
+                if self.frame_index < len(frames):
+                    frame = frames[self.frame_index]
+                    
+                    # Convert and update
+                    frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR) # Especial color conversion for GIFs
+                    texture = self.frame_to_texture(frame)
+                    self.root.ids.static_frame.texture = texture
+                    self.frame_index += 1
+                else:
+                    # Reset the frame index to loop the GIF
+                    self.frame_index = 0
+
+        self.update_static_gif_event = Clock.schedule_interval(update_gif, 1.0 / fps) # Update at specified FPS through kivy.clock 
+
+    def update_static_image(self, media):
+        # Read the image from the file path
+        frame = cv2.imread(media[0])
+
+        # Convert and update
+        texture = self.frame_to_texture(frame)
+        self.root.ids.static_frame.texture = texture
+
+    def frame_to_texture(self, frame):
+        # First process and THEN flip
+        frame = ARmarkerEngine().process(frame)
+        frame = cv2.flip(frame, 0)
+
+        # Convert the OpenCV frame to Kivy texture
+        buf = frame.tobytes()
+        texture = Texture.create(size=(frame.shape[1], frame.shape[0]), colorfmt='bgr')
+        texture.blit_buffer(buf, colorfmt='bgr', bufferfmt='ubyte')
+
+        return texture   
+
+    def mediaselect_callback(self):
+        media_path = filechooser.open_file()
+
+        if not media_path:
+            return
+
+        media_extension = media_path[0].split(".")[-1].lower()
+
+        self.gif_loop = self.video_loop = False  # Stop looping
+
+        if media_extension == "gif":
+            self.update_static_gif(media_path)
+        elif media_extension in self.supported_videocapture_extensions:
+            self.update_static_video(media_path)
+        elif media_extension in self.supported_imread_extensions:
+            self.update_static_image(media_path)
         else:
-            # further implement pop-up if non media was selected
-            pass
+            self.error_popup("File Error", "Unsupported file type")
+            self.gif_loop = self.video_loop = True  # Continue looping if not supported
+
+    def objselect_callback(self):
+        """
+        object_path = filechooser.open_file()
+        if object_path:
+            object_extension = object_path[0].split(".")[-1].lower()
+
+            if object_extension in self.supported_imread_extensions:
+                pass
+                
+        else:
+            self.error_popup("File Error", "No file selected")
+        """
+        pass
 
     def objrotate_callback(self):
         # call the object rotate function from ARmarkerEngine
-        pass
-
-    def objselect_callback(self):
-        # object selection
         pass
 
     def camrecord_callback(self):
         # click for screenshot, hold for video
         pass
 
-    def camrotate_callback(self):
+    def camrotate_callback(self):      
         # Switch between camera index 0 and 1
         if self.cap_index == 1:
             self.cap_index = 0
@@ -101,44 +283,57 @@ class UserApp(MDApp):
         self.cap.release()
         self.live_broadcast()
 
-    def live_broadcast_error(self):
+    def error_popup(self, error_cause, error_message):
         dialog = MDDialog(
-            title="Camera Error",
-            text="Unable to access the camera. Please check the camera connection.",
+            title=f"{error_cause}",
+            text=f"{error_message}",
             buttons=[
                 MDRaisedButton(
                     text="OK",
                     on_release=lambda *x: dialog.dismiss()
                 )
             ]
-        )
-        dialog.open()   
+        )       
+        dialog.open()
 
-    def upload_static_error(self):
-        dialog = MDDialog(
-            title="Media Loading Error",
-            text="Failed to load the selected media. Please check the file format and try again.",
-            buttons=[
-                MDRaisedButton(
-                    text="OK",
-                    on_release=lambda *x: dialog.dismiss()
-                )
-            ]
-    )
-    
+    def change_screen(self, screen_name): # experimental, for handling screen output displaying
+        current_screen = screen_name
+        if current_screen != "live":
+            if hasattr(self, "update_live_event"):
+                self.cap.release()
+                del self.update_live_event
+        else:
+            if not hasattr(self, 'update_live_event'):
+                self.live_broadcast()
+
+        if current_screen != "static":
+            pass
+        else:
+            pass
+
     def open_url(self, url):
-        webbrowser.open(url)
+        webbrowser.open(url) 
 
     def build(self):
         self.title = "ARmarker tool"
         self.theme_cls.theme_style = "Light"
         self.theme_cls.primary_palette = "BlueGray"
 
-        # Initialize camera
+        # Initialize camera capture
         self.cap_index = 0
         self.live_broadcast()
+
+        # Define events
+        # part of experimental screen output handling
+        self.update_static_gif_event = None
+        self.update_static_video_event = None
+
+        # Set supported extensions
+        self.supported_imread_extensions = ["bmp", "jpeg", "jpg", "jpe", "jp2", "png", "webp", "pbm", "pgm", "ppm", "pxm", "pnm", "sr", "ras", "tiff", "tif", "exr", "hdr", "pic"]
+        self.supported_videocapture_extensions = ["mp4", "avi", "mov", "mkv", "wmv", "flv", "webm", "mpg", "mpeg", "ts", "m4v"]
         
         return Builder.load_string(main_helper)
-
+    
 if __name__ == "__main__":
     UserApp().run()
+

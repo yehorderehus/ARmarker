@@ -7,31 +7,37 @@ main_helper = """
             on_press:
                 root.nav_drawer.set_state("close")
                 root.screen_manager.current = "live"
+                app.change_screen("live")
         OneLineListItem:
             text: "Replace on Media"
             on_press:
                 root.nav_drawer.set_state("close")
                 root.screen_manager.current = "static"
+                app.change_screen("static")
         OneLineListItem:
             text: "Gallery"
             on_press:
                 root.nav_drawer.set_state("close")
                 root.screen_manager.current = "frames"
+                app.change_screen("frames")
         OneLineListItem:
             text: "Objects"
             on_press:
                 root.nav_drawer.set_state("close")
                 root.screen_manager.current = "objects"
+                app.change_screen("objects")
         OneLineListItem:
             text: "ARmarkers"
             on_press:
                 root.nav_drawer.set_state("close")
                 root.screen_manager.current = "markers"
+                app.change_screen("markers")
         OneLineListItem:
             text: "About"
             on_press:
                 root.nav_drawer.set_state("close")
                 root.screen_manager.current = "about"
+                app.change_screen("about")
         BoxLayout:
             orientation: 'horizontal'
             size_hint_y: None
@@ -103,7 +109,7 @@ MDScreen:
                 MDIconButton:
                     icon: "file-image-plus"
                     pos_hint: {"bottom": 1, "right": 1}
-                    on_release: app.upload_static_callback()
+                    on_release: app.mediaselect_callback()
             MDScreen:
                 name: "frames"
                 MDIconButton:
