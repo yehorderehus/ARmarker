@@ -48,65 +48,52 @@ class ARmarkerEngine:
             cv2.aruco.DICT_APRILTAG_36h10,
             cv2.aruco.DICT_APRILTAG_36h11
         ]
-    
-    def process(self, frame): # this will be crossroad for aruco / orb
-        self.aruco_detection(frame)
+        
+    def process(self, frame, object, object_type): # this will be crossroad for aruco / orb
+        self.aruco_detection(frame, object, object_type)
+
         return frame
     
-    def aruco_detection(self, frame):
+    def aruco_detection(self, frame, object, object_type):
         # Loop through the aruco dictionaries
         for arucoDict in self.aruco_dictionaries:
             arucoCorners, arucoIds, arucoRejected = cv2.aruco.detectMarkers(frame, cv2.aruco.getPredefinedDictionary(arucoDict), parameters=self.arucoParams)
-            """
-            if self.object_type == "plain":
-                for arucoCorner in range(len(arucoCorners)):
-                    frame = self.plain_augmentation(arucoCorner, frame, self.object)
-            if self.object_type == "volumetric":
-                for arucoCorner in range(len(arucoCorners)):
-                    frame = self.volumetric_augmentation(arucoCorner, frame, self.object)
+            
+            if object_type == "plain":
+                for arucoCorner in arucoCorners:
+                    frame = self.plain_augmentation(arucoCorner, frame, object)
+            elif object_type == "volumetric":
+                for arucoCorner in arucoCorners:
+                    frame = self.volumetric_augmentation(arucoCorner, frame, object)
             else:
-            """
                 # If no object is selected, encircle the detected marker
-            for corner in arucoCorners:
-                aruco_corners = np.int32(corner).reshape(-1, 2)
+                for corner in arucoCorners:
+                    aruco_corners = np.int32(corner).reshape(-1, 2)
 
-                # Calculate the side length of the detected marker
-                aruco_side_length = int(np.linalg.norm(aruco_corners[0] - aruco_corners[1]))
-                polylines_thickness = int(aruco_side_length * 0.01) # Second parameter is the thickness ratio
+                    # Calculate the side length of the detected marker
+                    aruco_side_length = int(np.linalg.norm(aruco_corners[0] - aruco_corners[1]))
+                    polylines_thickness = int(aruco_side_length * 0.01) # Second parameter is the thickness ratio
 
-                # Draw the polygon around the detected marker
-                cv2.polylines(
-                    frame,
-                    [aruco_corners],
-                    isClosed=True,
-                    color=(0, 255, 0),
-                    thickness=polylines_thickness
-                )
+                    # Draw the polygon around the detected marker
+                    cv2.polylines(
+                        frame,
+                        [aruco_corners],
+                        isClosed=True,
+                        color=(0, 255, 0),
+                        thickness=polylines_thickness
+                    )
 
         return frame
     
-    def plain_augmentation(self, bbox, shot, augment, scale_factor=1.05):
+    def plain_augmentation(self, bbox, shot, augment): # for now works with images only, will be updated for videos and gifs (videos and gifs augmentation for now crash the app!)
         top_left = bbox[0][0][0], bbox[0][0][1]
         top_right = bbox[0][1][0], bbox[0][1][1]
         bottom_right = bbox[0][2][0], bbox[0][2][1]
         bottom_left = bbox[0][3][0], bbox[0][3][1]
-
-        # Calculate the center of the detected marker
-        center_x = (top_left[0] + bottom_right[0]) / 2
-        center_y = (top_left[1] + bottom_right[1]) / 2
-
-        # Calculate new corner points for the updated bounding box
-        top_left = int(center_x - scale_factor * (center_x - top_left[0])), int(
-            center_y - scale_factor * (center_y - top_left[1]))
-        top_right = int(center_x + scale_factor * (top_right[0] - center_x)), int(
-            center_y - scale_factor * (center_y - top_right[1]))
-        bottom_right = int(center_x + scale_factor * (bottom_right[0] - center_x)), int(
-            center_y + scale_factor * (bottom_right[1] - center_y))
-        bottom_left = int(center_x - scale_factor * (center_x - bottom_left[0])), int(
-            center_y + scale_factor * (bottom_left[1] - center_y))
         
         # Open the rectangular from augment and get its dimensions
-        rectangle = Image.fromarray(augment)
+        rectangle = cv2.imread(augment)
+        rectangle = Image.fromarray(rectangle)
         width, height = rectangle.size
         side_length = max(width, height)
 
@@ -119,7 +106,7 @@ class ARmarkerEngine:
         background.paste(rectangle, (x_offset, y_offset))
 
         # Convert edited augment to numpy array
-        augment = np.array(background)
+        augment = np.array(background)  
 
         # Find numpy arrays of the corner points of the shot and the augment
         points_shot = np.array([top_left, top_right, bottom_right, bottom_left])
@@ -130,7 +117,11 @@ class ARmarkerEngine:
         augment = cv2.warpPerspective(augment, matrix, (shot.shape[1], shot.shape[0]))
         cv2.fillConvexPoly(shot, points_shot.astype(int), (0, 0, 0), 16)
 
-        return augment + shot
+        # test
+        result = np.array(shot + augment)
+        cv2.imshow("result", result)
+
+        return shot + augment # Malevich marker problem - black background, only first aruco marker is processed; imshow shows the correct result
 
     def volumetric_augmentation(self):
         pass
@@ -157,7 +148,10 @@ class UserApp(MDApp):
             
             self.update_live_event = Clock.schedule_interval(update_live, 1.0 / 30.0) # Update at 30 FPS through kivy.clock
 
-    def update_static_video(self, media):
+    def update_static_video(self, media=None):
+        if not media:
+            return
+        
         # Open the video file and initialize a flag to control video looping
         self.cap_video = cv2.VideoCapture(media[0])
         self.video_loop = True
@@ -176,7 +170,10 @@ class UserApp(MDApp):
 
         self.update_static_video_event = Clock.schedule_interval(update_video, 1.0 / 30.0)  # Update at 30 FPS through kivy.clock
 
-    def update_static_gif(self, media):
+    def update_static_gif(self, media=None):
+        if not media:
+            return
+        
         # Open the GIF file and get its frame rate
         gif_reader = imageio.get_reader(media[0])
 
@@ -210,7 +207,10 @@ class UserApp(MDApp):
 
         self.update_static_gif_event = Clock.schedule_interval(update_gif, 1.0 / fps) # Update at specified FPS through kivy.clock 
 
-    def update_static_image(self, media):
+    def update_static_image(self, media=None):
+        if not media:
+            return
+        
         # Read the image from the file path
         frame = cv2.imread(media[0])
 
@@ -220,7 +220,7 @@ class UserApp(MDApp):
 
     def frame_to_texture(self, frame):
         # First process and THEN flip
-        frame = ARmarkerEngine().process(frame)
+        frame = ARmarkerEngine().process(frame, self.object, self.object_type)
         frame = cv2.flip(frame, 0)
 
         # Convert the OpenCV frame to Kivy texture
@@ -231,38 +231,66 @@ class UserApp(MDApp):
         return texture   
 
     def mediaselect_callback(self):
-        media_path = filechooser.open_file()
+        media_selection = self.fileselect()
 
-        if not media_path:
-            return
+        if media_selection is not None:
+            self.media_path, self.media_extension = media_selection # Self because of object function
 
-        media_extension = media_path[0].split(".")[-1].lower()
+            self.gif_loop = self.video_loop = False  # Stop looping
 
-        self.gif_loop = self.video_loop = False  # Stop looping
-
-        if media_extension == "gif":
-            self.update_static_gif(media_path)
-        elif media_extension in self.supported_videocapture_extensions:
-            self.update_static_video(media_path)
-        elif media_extension in self.supported_imread_extensions:
-            self.update_static_image(media_path)
-        else:
-            self.error_popup("File Error", "Unsupported file type")
-            self.gif_loop = self.video_loop = True  # Continue looping if not supported
+            if self.media_extension == "gif":
+                self.update_static_gif(self.media_path)
+            elif self.media_extension in self.supported_videocapture_extensions:
+                self.update_static_video(self.media_path)
+            elif self.media_extension in self.supported_imread_extensions:
+                self.update_static_image(self.media_path)
+            else:
+                self.error_popup("File Error", "Unsupported file type")
+                self.gif_loop = self.video_loop = True  # Continue looping if not supported
 
     def objselect_callback(self):
-        """
-        object_path = filechooser.open_file()
-        if object_path:
-            object_extension = object_path[0].split(".")[-1].lower()
+        object_selection = self.fileselect()
 
-            if object_extension in self.supported_imread_extensions:
-                pass
-                
-        else:
-            self.error_popup("File Error", "No file selected")
-        """
-        pass
+        if object_selection is not None:
+            object_path, object_extension = object_selection
+
+            self.gif_loop = self.video_loop = False  # Stop looping
+
+            if object_extension in self.supported_imread_extensions or object_extension in self.supported_videocapture_extensions or object_extension == "gif":
+                self.object = object_path[0]
+                self.object_type = "plain"
+
+                # Check media type and update
+                if self.media_extension in self.supported_imread_extensions:
+                    self.update_static_image(self.media_path)
+                elif self.media_extension in self.supported_videocapture_extensions:
+                    self.update_static_video(self.media_path)
+                elif self.media_extension == "gif":
+                    self.update_static_gif(self.media_path)
+
+            elif object_extension in self.supported_opengl_extensions:
+                self.object = object_path[0]
+                self.object_type = "plain"
+
+                # Check media type and update
+                if self.media_extension in self.supported_imread_extensions:
+                    self.update_static_image(self.media_path)
+                elif self.media_extension in self.supported_videocapture_extensions:
+                    self.update_static_video(self.media_path)
+                elif self.media_extension == "gif":
+                    self.update_static_gif(self.media_path)        
+            else:
+                self.error_popup("File Error", "No file selected")
+                self.gif_loop = self.video_loop = True  # Continue looping if not supported
+
+    def fileselect(self):
+        file_path = filechooser.open_file()
+
+        if not file_path:
+            return
+        
+        file_extension = file_path[0].split(".")[-1].lower()
+        return file_path, file_extension
 
     def objrotate_callback(self):
         # call the object rotate function from ARmarkerEngine
@@ -331,6 +359,13 @@ class UserApp(MDApp):
         # Set supported extensions
         self.supported_imread_extensions = ["bmp", "jpeg", "jpg", "jpe", "jp2", "png", "webp", "pbm", "pgm", "ppm", "pxm", "pnm", "sr", "ras", "tiff", "tif", "exr", "hdr", "pic"]
         self.supported_videocapture_extensions = ["mp4", "avi", "mov", "mkv", "wmv", "flv", "webm", "mpg", "mpeg", "ts", "m4v"]
+        self.supported_opengl_extensions = ["obj"]
+
+        # Set initial values
+        self.object = None
+        self.object_type = None
+        self.media_path = None
+        self.media_extension = None
         
         return Builder.load_string(main_helper)
     
