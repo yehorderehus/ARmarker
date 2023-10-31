@@ -3,6 +3,7 @@
 # Kivy and KivyMD imports
 from kivy.lang import Builder
 from kivy.clock import Clock
+from kivy.uix.camera import Camera
 from kivy.properties import ObjectProperty
 from kivy.graphics.texture import Texture
 from kivymd.app import MDApp
@@ -23,7 +24,8 @@ from plyer import filechooser
 #from typing import Optional, overload, Tuple, List, Union # for probably further use
 
 class ARmarkerEngine:
-    def __init__(self):
+    def __init__(self, supported_imread_extensions, supported_videocapture_extensions, supported_opengl_extensions):
+        # Setup aruco
         self.arucoParams = cv2.aruco.DetectorParameters()
         self.aruco_dictionaries = [
             cv2.aruco.DICT_4X4_50,
@@ -48,33 +50,47 @@ class ARmarkerEngine:
             cv2.aruco.DICT_APRILTAG_36h10,
             cv2.aruco.DICT_APRILTAG_36h11
         ]
-        
-    def process(self, frame, object, object_type): # this will be crossroad for aruco / orb
-        self.aruco_detection(frame, object, object_type)
 
-        return frame
-    
-    def aruco_detection(self, frame, object, object_type):
+        # Import supported extensions from UserApp
+        self.supported_imread_extensions = supported_imread_extensions
+        self.supported_videocapture_extensions = supported_videocapture_extensions
+        self.supported_opengl_extensions = supported_opengl_extensions
+        
+    def process(self, frame, object, object_type, object_extension): # this will be crossroad for aruco / orb      
+        if object is None: 
+            self.aruco_detection(frame, object, object_type, object_extension)
+            return frame # If no object selected, encircle detected aruco markers
+          
+        else:
+            augmented_frame = self.aruco_detection(frame, object, object_type, object_extension)
+            return augmented_frame # If object selected, perform augmentation of aruco markers
+
+    def aruco_detection(self, frame, object, object_type, object_extension):
+        augmented_frame = frame.copy()  # Create a copy of the frame to accumulate augmentations
+
         # Loop through the aruco dictionaries
         for arucoDict in self.aruco_dictionaries:
             arucoCorners, arucoIds, arucoRejected = cv2.aruco.detectMarkers(frame, cv2.aruco.getPredefinedDictionary(arucoDict), parameters=self.arucoParams)
-            
+
             if object_type == "plain":
                 for arucoCorner in arucoCorners:
-                    frame = self.plain_augmentation(arucoCorner, frame, object)
+                    augmented_frame = self.plain_augmentation(arucoCorner, augmented_frame, object, object_extension)
+
             elif object_type == "volumetric":
                 for arucoCorner in arucoCorners:
-                    frame = self.volumetric_augmentation(arucoCorner, frame, object)
+                    augmented_frame = self.volumetric_augmentation(arucoCorner, augmented_frame, object, object_extension)
+            
+            # If no object selected, encircle detected aruco markers
             else:
-                # If no object is selected, encircle the detected marker
-                for corner in arucoCorners:
-                    aruco_corners = np.int32(corner).reshape(-1, 2)
+                for arucoCorner in arucoCorners:
+                    # Find the numpy array of the corner points of the detected marker
+                    aruco_corners = np.int32(arucoCorner).reshape(-1, 2)
 
                     # Calculate the side length of the detected marker
                     aruco_side_length = int(np.linalg.norm(aruco_corners[0] - aruco_corners[1]))
-                    polylines_thickness = int(aruco_side_length * 0.01) # Second parameter is the thickness ratio
+                    polylines_thickness = int(aruco_side_length * 0.01)  # Second parameter is the thickness ratio
 
-                    # Draw the polygon around the detected marker
+                    # Draw the polygon around each detected marker
                     cv2.polylines(
                         frame,
                         [aruco_corners],
@@ -83,17 +99,29 @@ class ARmarkerEngine:
                         thickness=polylines_thickness
                     )
 
-        return frame
-    
-    def plain_augmentation(self, bbox, shot, augment): # for now works with images only, will be updated for videos and gifs (videos and gifs augmentation for now crash the app!)
+        if object is None:
+            return frame  # Return the frame with aruco markers encircled
+        
+        else:
+            return augmented_frame  # Return the frame with augmented aruco markers
+
+    def plain_augmentation(self, bbox, shot, augment, augment_extension): 
         top_left = bbox[0][0][0], bbox[0][0][1]
         top_right = bbox[0][1][0], bbox[0][1][1]
         bottom_right = bbox[0][2][0], bbox[0][2][1]
         bottom_left = bbox[0][3][0], bbox[0][3][1]
         
         # Open the rectangular from augment and get its dimensions
-        rectangle = cv2.imread(augment)
-        rectangle = Image.fromarray(rectangle)
+        if augment_extension in self.supported_imread_extensions:
+            rectangle = cv2.imread(augment)
+            rectangle = Image.fromarray(rectangle)
+
+        elif augment_extension in self.supported_videocapture_extensions or augment_extension == "gif": # for now it supports only first frame of video / gif
+            cap = cv2.VideoCapture(augment)
+            ret, frame = cap.read()
+            if ret:
+                rectangle = Image.fromarray(frame)
+
         width, height = rectangle.size
         side_length = max(width, height)
 
@@ -117,13 +145,9 @@ class ARmarkerEngine:
         augment = cv2.warpPerspective(augment, matrix, (shot.shape[1], shot.shape[0]))
         cv2.fillConvexPoly(shot, points_shot.astype(int), (0, 0, 0), 16)
 
-        # test
-        result = np.array(shot + augment)
-        cv2.imshow("result", result)
+        return shot + augment
 
-        return shot + augment # Malevich marker problem - black background, only first aruco marker is processed; imshow shows the correct result
-
-    def volumetric_augmentation(self):
+    def volumetric_augmentation(self): # to be implemented
         pass
 
 class UserApp(MDApp):     
@@ -220,7 +244,7 @@ class UserApp(MDApp):
 
     def frame_to_texture(self, frame):
         # First process and THEN flip
-        frame = ARmarkerEngine().process(frame, self.object, self.object_type)
+        frame = self.ar_marker_engine.process(frame, self.object, self.object_type, self.object_extension)
         frame = cv2.flip(frame, 0)
 
         # Convert the OpenCV frame to Kivy texture
@@ -234,7 +258,7 @@ class UserApp(MDApp):
         media_selection = self.fileselect()
 
         if media_selection is not None:
-            self.media_path, self.media_extension = media_selection # Self because of object function
+            self.media_path, self.media_extension = media_selection
 
             self.gif_loop = self.video_loop = False  # Stop looping
 
@@ -252,11 +276,11 @@ class UserApp(MDApp):
         object_selection = self.fileselect()
 
         if object_selection is not None:
-            object_path, object_extension = object_selection
+            object_path, self.object_extension = object_selection
 
             self.gif_loop = self.video_loop = False  # Stop looping
 
-            if object_extension in self.supported_imread_extensions or object_extension in self.supported_videocapture_extensions or object_extension == "gif":
+            if self.object_extension in self.supported_imread_extensions or self.object_extension in self.supported_videocapture_extensions or self.object_extension == "gif":
                 self.object = object_path[0]
                 self.object_type = "plain"
 
@@ -268,9 +292,9 @@ class UserApp(MDApp):
                 elif self.media_extension == "gif":
                     self.update_static_gif(self.media_path)
 
-            elif object_extension in self.supported_opengl_extensions:
+            elif self.object_extension in self.supported_opengl_extensions:
                 self.object = object_path[0]
-                self.object_type = "plain"
+                self.object_type = "volumetric"
 
                 # Check media type and update
                 if self.media_extension in self.supported_imread_extensions:
@@ -353,7 +377,7 @@ class UserApp(MDApp):
 
         # Define events
         # part of experimental screen output handling
-        self.update_static_gif_event = None
+        self.update_static_gif_event = None 
         self.update_static_video_event = None
 
         # Set supported extensions
@@ -361,9 +385,13 @@ class UserApp(MDApp):
         self.supported_videocapture_extensions = ["mp4", "avi", "mov", "mkv", "wmv", "flv", "webm", "mpg", "mpeg", "ts", "m4v"]
         self.supported_opengl_extensions = ["obj"]
 
+        # Initialize ARmarkerEngine and pass supported extensions
+        self.ar_marker_engine = ARmarkerEngine(self.supported_imread_extensions, self.supported_videocapture_extensions, self.supported_opengl_extensions)
+
         # Set initial values
         self.object = None
         self.object_type = None
+        self.object_extension = None
         self.media_path = None
         self.media_extension = None
         
