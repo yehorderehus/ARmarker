@@ -1,9 +1,6 @@
-# Comments start with big letter, TO-DOs with small
-
 # Kivy and KivyMD imports
 from kivy.lang import Builder
 from kivy.clock import Clock
-from kivy.uix.camera import Camera
 from kivy.properties import ObjectProperty
 from kivy.graphics.texture import Texture
 from kivymd.app import MDApp
@@ -18,7 +15,6 @@ from main_helper import main_helper
 import cv2
 import numpy as np
 import webbrowser
-import imageio
 from PIL import Image
 from plyer import filechooser
 #from typing import Optional, overload, Tuple, List, Union # for probably further use
@@ -57,16 +53,10 @@ class ARmarkerEngine:
         self.supported_opengl_extensions = supported_opengl_extensions
         
     def process(self, frame, object, object_type, object_extension): # this will be crossroad for aruco / orb      
-        if object is None: 
-            self.aruco_detection(frame, object, object_type, object_extension)
-            return frame # If no object selected, encircle detected aruco markers
-          
-        else:
-            augmented_frame = self.aruco_detection(frame, object, object_type, object_extension)
-            return augmented_frame # If object selected, perform augmentation of aruco markers
-
-    def aruco_detection(self, frame, object, object_type, object_extension):
-        augmented_frame = frame.copy()  # Create a copy of the frame to accumulate augmentations
+        return self.aruco_processing(frame, object, object_type, object_extension) # If object selected, perform augmentation of aruco markers
+        
+    def aruco_processing(self, frame, object, object_type, object_extension):
+        processed_frame = frame.copy()  # Create a copy of the frame to accumulate processed frames
 
         # Loop through the aruco dictionaries
         for arucoDict in self.aruco_dictionaries:
@@ -74,11 +64,17 @@ class ARmarkerEngine:
 
             if object_type == "plain":
                 for arucoCorner in arucoCorners:
-                    augmented_frame = self.plain_augmentation(arucoCorner, augmented_frame, object, object_extension)
+                    if object_extension in self.supported_imread_extensions:
+                        augment = cv2.imread(object)
+                        processed_frame = self.plain_augmentation(arucoCorner, processed_frame, augment)
+                    if object_extension in self.supported_videocapture_extensions: # to work later - full video augmentation
+                        augment = cv2.VideoCapture(object)
+                        ret, augment = augment.read()
+                        processed_frame = self.plain_augmentation(arucoCorner, processed_frame, augment)
 
             elif object_type == "volumetric":
                 for arucoCorner in arucoCorners:
-                    augmented_frame = self.volumetric_augmentation(arucoCorner, augmented_frame, object, object_extension)
+                    processed_frame = self.volumetric_augmentation(arucoCorner, processed_frame, object)
             
             # If no object selected, encircle detected aruco markers
             else:
@@ -92,36 +88,23 @@ class ARmarkerEngine:
 
                     # Draw the polygon around each detected marker
                     cv2.polylines(
-                        frame,
+                        processed_frame,
                         [aruco_corners],
                         isClosed=True,
                         color=(0, 255, 0),
                         thickness=polylines_thickness
                     )
 
-        if object is None:
-            return frame  # Return the frame with aruco markers encircled
-        
-        else:
-            return augmented_frame  # Return the frame with augmented aruco markers
+        return processed_frame
 
-    def plain_augmentation(self, bbox, shot, augment, augment_extension): 
+    def plain_augmentation(self, bbox, shot, augment):
         top_left = bbox[0][0][0], bbox[0][0][1]
         top_right = bbox[0][1][0], bbox[0][1][1]
         bottom_right = bbox[0][2][0], bbox[0][2][1]
         bottom_left = bbox[0][3][0], bbox[0][3][1]
-        
-        # Open the rectangular from augment and get its dimensions
-        if augment_extension in self.supported_imread_extensions:
-            rectangle = cv2.imread(augment)
-            rectangle = Image.fromarray(rectangle)
-
-        elif augment_extension in self.supported_videocapture_extensions or augment_extension == "gif": # for now it supports only first frame of video / gif
-            cap = cv2.VideoCapture(augment)
-            ret, frame = cap.read()
-            if ret:
-                rectangle = Image.fromarray(frame)
-
+    
+        # Open an rectangular from augment and get its dimensions
+        rectangle = Image.fromarray(augment)
         width, height = rectangle.size
         side_length = max(width, height)
 
@@ -162,6 +145,12 @@ class UserApp(MDApp):
         else:
             self.cap = cv2.VideoCapture(self.cap_index)  
 
+            # If 'fps' is not available in metadata, set a default frame rate
+            try:
+                fps = self.cap.get(cv2.CAP_PROP_FPS)
+            except KeyError:
+                fps = 30
+
             def update_live(dt):
                 ret, frame = self.cap.read()
 
@@ -170,7 +159,7 @@ class UserApp(MDApp):
                     texture = self.frame_to_texture(frame)
                     self.root.ids.live_frame.texture = texture  
             
-            self.update_live_event = Clock.schedule_interval(update_live, 1.0 / 30.0) # Update at 30 FPS through kivy.clock
+            self.update_live_event = Clock.schedule_interval(update_live, 1.0 / fps) # Update at specified FPS through kivy.clock 
 
     def update_static_video(self, media=None):
         if not media:
@@ -180,6 +169,12 @@ class UserApp(MDApp):
         self.cap_video = cv2.VideoCapture(media[0])
         self.video_loop = True
 
+        # If 'fps' is not available in metadata, set a default frame rate
+        try:
+            fps = self.cap_video.get(cv2.CAP_PROP_FPS)
+        except KeyError:
+            fps = 30
+
         def update_video(dt):
             if hasattr(self, 'cap_video') and self.cap_video.isOpened() and self.video_loop:
                 ret, frame = self.cap_video.read()
@@ -188,48 +183,12 @@ class UserApp(MDApp):
                     # Convert and update
                     texture = self.frame_to_texture(frame)
                     self.root.ids.static_frame.texture = texture
+
                 else:
                     # Video ended, release the video capture
                     self.cap_video.set(cv2.CAP_PROP_POS_FRAMES, 0)
 
-        self.update_static_video_event = Clock.schedule_interval(update_video, 1.0 / 30.0)  # Update at 30 FPS through kivy.clock
-
-    def update_static_gif(self, media=None):
-        if not media:
-            return
-        
-        # Open the GIF file and get its frame rate
-        gif_reader = imageio.get_reader(media[0])
-
-        # If 'fps' is not available in metadata, set a default frame rate
-        try:
-            fps = gif_reader.get_meta_data()['fps']
-        except KeyError:
-            fps = 10
-
-        # Create a list of frames to be processed
-        frames = list(gif_reader)
-
-        # Initialize the frame index and a flag to control GIF looping
-        self.frame_index = 0
-        self.gif_loop = True
-
-        # Define a function to update the static frame
-        def update_gif(dt):
-            if self.gif_loop:
-                if self.frame_index < len(frames):
-                    frame = frames[self.frame_index]
-                    
-                    # Convert and update
-                    frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR) # Especial color conversion for GIFs
-                    texture = self.frame_to_texture(frame)
-                    self.root.ids.static_frame.texture = texture
-                    self.frame_index += 1
-                else:
-                    # Reset the frame index to loop the GIF
-                    self.frame_index = 0
-
-        self.update_static_gif_event = Clock.schedule_interval(update_gif, 1.0 / fps) # Update at specified FPS through kivy.clock 
+        self.update_static_video_event = Clock.schedule_interval(update_video, 1.0 / fps)  # Update at specified FPS through kivy.clock 
 
     def update_static_image(self, media=None):
         if not media:
@@ -252,7 +211,7 @@ class UserApp(MDApp):
         texture = Texture.create(size=(frame.shape[1], frame.shape[0]), colorfmt='bgr')
         texture.blit_buffer(buf, colorfmt='bgr', bufferfmt='ubyte')
 
-        return texture   
+        return texture
 
     def mediaselect_callback(self):
         media_selection = self.fileselect()
@@ -260,17 +219,17 @@ class UserApp(MDApp):
         if media_selection is not None:
             self.media_path, self.media_extension = media_selection
 
-            self.gif_loop = self.video_loop = False  # Stop looping
+            self.video_loop = False  # Stop looping
 
-            if self.media_extension == "gif":
-                self.update_static_gif(self.media_path)
-            elif self.media_extension in self.supported_videocapture_extensions:
+            if self.media_extension in self.supported_videocapture_extensions:
                 self.update_static_video(self.media_path)
+
             elif self.media_extension in self.supported_imread_extensions:
                 self.update_static_image(self.media_path)
+
             else:
                 self.error_popup("File Error", "Unsupported file type")
-                self.gif_loop = self.video_loop = True  # Continue looping if not supported
+                self.video_loop = True  # Continue looping if not supported
 
     def objselect_callback(self):
         object_selection = self.fileselect()
@@ -278,34 +237,29 @@ class UserApp(MDApp):
         if object_selection is not None:
             object_path, self.object_extension = object_selection
 
-            self.gif_loop = self.video_loop = False  # Stop looping
+            self.video_loop = False  # Stop looping
 
-            if self.object_extension in self.supported_imread_extensions or self.object_extension in self.supported_videocapture_extensions or self.object_extension == "gif":
+            if self.object_extension in self.supported_imread_extensions or self.object_extension in self.supported_videocapture_extensions:
                 self.object = object_path[0]
                 self.object_type = "plain"
 
-                # Check media type and update
                 if self.media_extension in self.supported_imread_extensions:
                     self.update_static_image(self.media_path)
                 elif self.media_extension in self.supported_videocapture_extensions:
                     self.update_static_video(self.media_path)
-                elif self.media_extension == "gif":
-                    self.update_static_gif(self.media_path)
 
             elif self.object_extension in self.supported_opengl_extensions:
                 self.object = object_path[0]
                 self.object_type = "volumetric"
 
-                # Check media type and update
                 if self.media_extension in self.supported_imread_extensions:
                     self.update_static_image(self.media_path)
                 elif self.media_extension in self.supported_videocapture_extensions:
-                    self.update_static_video(self.media_path)
-                elif self.media_extension == "gif":
-                    self.update_static_gif(self.media_path)        
+                    self.update_static_video(self.media_path)    
+
             else:
                 self.error_popup("File Error", "No file selected")
-                self.gif_loop = self.video_loop = True  # Continue looping if not supported
+                self.video_loop = True  # Continue looping if not supported
 
     def fileselect(self):
         file_path = filechooser.open_file()
@@ -382,7 +336,7 @@ class UserApp(MDApp):
 
         # Set supported extensions
         self.supported_imread_extensions = ["bmp", "jpeg", "jpg", "jpe", "jp2", "png", "webp", "pbm", "pgm", "ppm", "pxm", "pnm", "sr", "ras", "tiff", "tif", "exr", "hdr", "pic"]
-        self.supported_videocapture_extensions = ["mp4", "avi", "mov", "mkv", "wmv", "flv", "webm", "mpg", "mpeg", "ts", "m4v"]
+        self.supported_videocapture_extensions = ["gif", "mp4", "avi", "mov", "mkv", "wmv", "flv", "webm", "mpg", "mpeg", "ts", "m4v"]
         self.supported_opengl_extensions = ["obj"]
 
         # Initialize ARmarkerEngine and pass supported extensions
