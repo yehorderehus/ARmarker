@@ -8,19 +8,21 @@ from kivymd.uix.scrollview import MDScrollView
 from kivymd.uix.dialog import MDDialog
 from kivymd.uix.button import MDRaisedButton
 
-# Helper import
-from main_helper import main_helper
-
 # Other imports
 import cv2
 import numpy as np
 import webbrowser
 from PIL import Image
 from plyer import filechooser
-#from typing import Optional, overload, Tuple, List, Union # for probably further use
+
+# Common imports
+from main_helper import main_helper
 
 class ARmarkerEngine:
-    def __init__(self, supported_imread_extensions, supported_videocapture_extensions, supported_opengl_extensions):
+    def __init__(self, supported_imread_extensions,
+                 supported_videocapture_extensions,
+                 supported_opengl_extensions):
+
         # Setup aruco
         self.arucoParams = cv2.aruco.DetectorParameters()
         self.aruco_dictionaries = [
@@ -51,10 +53,10 @@ class ARmarkerEngine:
         self.supported_imread_extensions = supported_imread_extensions
         self.supported_videocapture_extensions = supported_videocapture_extensions
         self.supported_opengl_extensions = supported_opengl_extensions
-        
-    def process(self, frame, object, object_type, object_extension): # this will be crossroad for aruco / orb      
-        return self.aruco_processing(frame, object, object_type, object_extension) # If object selected, perform augmentation of aruco markers
-        
+
+    def process(self, frame, object, object_type, object_extension):  # this will be crossroad for aruco / orb
+        return self.aruco_processing(frame, object, object_type, object_extension)  # If object selected, perform augmentation of aruco markers
+
     def aruco_processing(self, frame, object, object_type, object_extension):
         processed_frame = frame.copy()  # Create a copy of the frame to accumulate processed frames
 
@@ -67,7 +69,7 @@ class ARmarkerEngine:
                     if object_extension in self.supported_imread_extensions:
                         augment = cv2.imread(object)
                         processed_frame = self.plain_augmentation(arucoCorner, processed_frame, augment)
-                    if object_extension in self.supported_videocapture_extensions: # to work later - full video augmentation
+                    if object_extension in self.supported_videocapture_extensions:  # to work later - full length video augmentation
                         augment = cv2.VideoCapture(object)
                         ret, augment = augment.read()
                         processed_frame = self.plain_augmentation(arucoCorner, processed_frame, augment)
@@ -75,7 +77,7 @@ class ARmarkerEngine:
             elif object_type == "volumetric":
                 for arucoCorner in arucoCorners:
                     processed_frame = self.volumetric_augmentation(arucoCorner, processed_frame, object)
-            
+
             # If no object selected, encircle detected aruco markers
             else:
                 for arucoCorner in arucoCorners:
@@ -102,7 +104,7 @@ class ARmarkerEngine:
         top_right = bbox[0][1][0], bbox[0][1][1]
         bottom_right = bbox[0][2][0], bbox[0][2][1]
         bottom_left = bbox[0][3][0], bbox[0][3][1]
-    
+
         # Open an rectangular from augment and get its dimensions
         rectangle = Image.fromarray(augment)
         width, height = rectangle.size
@@ -117,7 +119,7 @@ class ARmarkerEngine:
         background.paste(rectangle, (x_offset, y_offset))
 
         # Convert edited augment to numpy array
-        augment = np.array(background)  
+        augment = np.array(background)
 
         # Find numpy arrays of the corner points of the shot and the augment
         points_shot = np.array([top_left, top_right, bottom_right, bottom_left])
@@ -130,20 +132,21 @@ class ARmarkerEngine:
 
         return shot + augment
 
-    def volumetric_augmentation(self): # to be implemented
+    def volumetric_augmentation(self):  # to be implemented
         pass
 
-class UserApp(MDApp):     
+
+class UserApp(MDApp):
     class ContentNavigationDrawer(MDScrollView):
         screen_manager = ObjectProperty()
         nav_drawer = ObjectProperty()
 
-    def live_broadcast(self):   
+    def live_broadcast(self):
         if not cv2.VideoCapture(self.cap_index).isOpened():
             self.error_popup("Camera Error", "Unable to access the camera. Please check the camera connection.")
             self.root.ids.live_frame.texture = None
         else:
-            self.cap = cv2.VideoCapture(self.cap_index)  
+            self.cap = cv2.VideoCapture(self.cap_index)
 
             # If 'fps' is not available in metadata, set a default frame rate
             try:
@@ -157,14 +160,14 @@ class UserApp(MDApp):
                 if ret:
                     # Convert and update
                     texture = self.frame_to_texture(frame)
-                    self.root.ids.live_frame.texture = texture  
-            
-            self.update_live_event = Clock.schedule_interval(update_live, 1.0 / fps) # Update at specified FPS through kivy.clock 
+                    self.root.ids.live_frame.texture = texture
+
+            self.update_live_event = Clock.schedule_interval(update_live, 1.0 / fps)  # Update at specified FPS through kivy.clock
 
     def update_static_video(self, media=None):
         if not media:
             return
-        
+
         # Open the video file and initialize a flag to control video looping
         self.cap_video = cv2.VideoCapture(media[0])
         self.video_loop = True
@@ -188,12 +191,12 @@ class UserApp(MDApp):
                     # Video ended, release the video capture
                     self.cap_video.set(cv2.CAP_PROP_POS_FRAMES, 0)
 
-        self.update_static_video_event = Clock.schedule_interval(update_video, 1.0 / fps)  # Update at specified FPS through kivy.clock 
+        self.update_static_video_event = Clock.schedule_interval(update_video, 1.0 / fps)  # Update at specified FPS through kivy.clock
 
     def update_static_image(self, media=None):
         if not media:
             return
-        
+
         # Read the image from the file path
         frame = cv2.imread(media[0])
 
@@ -255,7 +258,7 @@ class UserApp(MDApp):
                 if self.media_extension in self.supported_imread_extensions:
                     self.update_static_image(self.media_path)
                 elif self.media_extension in self.supported_videocapture_extensions:
-                    self.update_static_video(self.media_path)    
+                    self.update_static_video(self.media_path)
 
             else:
                 self.error_popup("File Error", "No file selected")
@@ -266,7 +269,7 @@ class UserApp(MDApp):
 
         if not file_path:
             return
-        
+
         file_extension = file_path[0].split(".")[-1].lower()
         return file_path, file_extension
 
@@ -278,7 +281,7 @@ class UserApp(MDApp):
         # click for screenshot, hold for video
         pass
 
-    def camrotate_callback(self):      
+    def camrotate_callback(self):
         # Switch between camera index 0 and 1
         if self.cap_index == 1:
             self.cap_index = 0
@@ -299,10 +302,10 @@ class UserApp(MDApp):
                     on_release=lambda *x: dialog.dismiss()
                 )
             ]
-        )       
+        )
         dialog.open()
 
-    def change_screen(self, screen_name): # experimental, for handling screen output displaying
+    def change_screen(self, screen_name):  # experimental, for handling screen output displaying
         current_screen = screen_name
         if current_screen != "live":
             if hasattr(self, "update_live_event"):
@@ -318,7 +321,7 @@ class UserApp(MDApp):
             pass
 
     def open_url(self, url):
-        webbrowser.open(url) 
+        webbrowser.open(url)
 
     def build(self):
         self.title = "ARmarker tool"
@@ -331,7 +334,7 @@ class UserApp(MDApp):
 
         # Define events
         # part of experimental screen output handling
-        self.update_static_gif_event = None 
+        self.update_static_gif_event = None
         self.update_static_video_event = None
 
         # Set supported extensions
@@ -348,9 +351,9 @@ class UserApp(MDApp):
         self.object_extension = None
         self.media_path = None
         self.media_extension = None
-        
+
         return Builder.load_string(main_helper)
-    
+
+
 if __name__ == "__main__":
     UserApp().run()
-
