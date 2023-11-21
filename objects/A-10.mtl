@@ -1,0 +1,55 @@
+# Blender 3.6.4 MTL File: 'A-10.blend'
+# www.blender.org
+
+newmtl Glass
+Ns 360.000000
+Ka 1.000000 1.000000 1.000000
+Kd 0.800000 0.800000 0.800000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.000000
+d 1.000000
+illum 2
+
+newmtl a10c-Light
+Ns 899.999939
+Ka 1.000000 1.000000 1.000000
+Kd 0.800000 0.800000 0.800000
+Ks 0.000000 0.000000 0.000000
+Ke 1.000000 1.000000 1.000000
+Ni 1.000000
+d 1.000000
+illum 1
+
+newmtl a10c-airframe
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 2
+map_Kd C:/untitled_a10c-airframe_BaseColor.png
+map_Ns C:/untitled_a10c-airframe_Roughness.png
+map_refl C:/untitled_a10c-airframe_Metallic.png
+map_Bump -bm 1.000000 C:/untitled_a10c-airframe_Normal.png
+
+newmtl a10c-cockpit
+Ns 224.999985
+Ka 1.000000 1.000000 1.000000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.450000
+d 1.000000
+illum 2
+map_Kd C:/Cockpit.png
+map_Bump -bm 1.000000 C:/untitled_a10c-airframe_Normal.png
+
+newmtl a10c-glassHUD
+Ns 899.999939
+Ka 1.000000 1.000000 1.000000
+Kd 0.800000 0.800000 0.800000
+Ks 0.500000 0.500000 0.500000
+Ke 0.000000 0.000000 0.000000
+Ni 1.000000
+d 1.000000
+illum 2
