@@ -1,152 +1,166 @@
 # OpenGL imports
 from OpenGL.GL import *
-# from OpenGL.GLUT import *
-# from OpenGL.GLU import *
 from OpenGL.GL.shaders import compileProgram, compileShader
 
 # Other imports
+import glfw
 import pyrr
-import os
-import glfw # maybe will be changed
 
 # Common imports
 from main_objtexloader import load_texture
 from main_objloader import ObjLoader
+from main import ARmarkerEngine
 
-# Read shader files
-def read_shader_file(file_name):
-    file_path = os.path.join('shaders_src', file_name)
-    with open(file_path, 'r') as file:
-        return file.read()
+class ShaderLoader:
+    @staticmethod
+    def read_shader_file(file_path):
+        with open(file_path, 'r') as file:
+            return file.read()
+    
+    @staticmethod
+    def load_shader_program(vertex_src_path, fragment_src_path):
+        vertex_src = ShaderLoader.read_shader_file(vertex_src_path)
+        fragment_src = ShaderLoader.read_shader_file(fragment_src_path)
+        return compileProgram(compileShader(vertex_src, GL_VERTEX_SHADER),
+                              compileShader(fragment_src, GL_FRAGMENT_SHADER))
 
-vertex_src = read_shader_file('vertex_src.txt')
-fragment_src = read_shader_file('fragment_src.txt')
 
-# GLFW callback functions
-def window_resize(window, width, height):
-    glViewport(0, 0, width, height)
-    projection = pyrr.matrix44.create_perspective_projection_matrix(45, width / height, 0.1, 100)
-    glUniformMatrix4fv(proj_loc, 1, GL_FALSE, projection)
-
-# Initializing GLFW library
-if not glfw.init():
-    raise Exception("glfw can not be initialized!")
-
-# Creating the window
-window = glfw.create_window(1280, 720, "My OpenGL window", None, None)
-
-# Check if window was created
-if not window:
-    glfw.terminate()
-    raise Exception("glfw window can not be created!")
-
-# Set window's position
-glfw.set_window_pos(window, 400, 200)
-
-# Set the callback function for window resize
-glfw.set_window_size_callback(window, window_resize)
-
-# Make the context current
-glfw.make_context_current(window)
-
-# Load the model
-model_indices, model_buffer = ObjLoader.load_model("objects/chibi.obj")
-
-# Load the model textures
-textures = glGenTextures(2)
-load_texture("objects/chibi.png", textures[0])
-
-# Compile the shader
-shader = compileProgram(compileShader(vertex_src, GL_VERTEX_SHADER), compileShader(fragment_src, GL_FRAGMENT_SHADER))
-
-# Create and bind a VAO and VBO for the model
-VAO = glGenVertexArrays(2)
-VBO = glGenBuffers(2)
-
-# Model VAO
-glBindVertexArray(VAO[0])
-
-# Model VBO
-glBindBuffer(GL_ARRAY_BUFFER, VBO[0])
-glBufferData(GL_ARRAY_BUFFER, model_buffer.nbytes, model_buffer, GL_STATIC_DRAW)
-
-# Model vertices
-glEnableVertexAttribArray(0)
-glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, model_buffer.itemsize * 8, ctypes.c_void_p(0))
-
-# Model textures
-glEnableVertexAttribArray(1)
-glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, model_buffer.itemsize * 8, ctypes.c_void_p(12))
-
-# Model normals
-glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, model_buffer.itemsize * 8, ctypes.c_void_p(20))
-glEnableVertexAttribArray(2)
-
-glUseProgram(shader)
-glClearColor(0, 0.1, 0.1, 1)
-glEnable(GL_DEPTH_TEST)
-glEnable(GL_BLEND)
-glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
-
-projection = pyrr.matrix44.create_perspective_projection_matrix(45, 1280 / 720, 0.1, 100)
-model_pos = pyrr.matrix44.create_from_translation(pyrr.Vector3([0, -5, -10]))
-
-# eye, target, up
-view = pyrr.matrix44.create_look_at(pyrr.Vector3([0, 0, 8]), pyrr.Vector3([0, 0, 0]), pyrr.Vector3([0, 1, 0]))
-
-model_loc = glGetUniformLocation(shader, "model")
-proj_loc = glGetUniformLocation(shader, "projection")
-view_loc = glGetUniformLocation(shader, "view")
-
-glUniformMatrix4fv(proj_loc, 1, GL_FALSE, projection)
-glUniformMatrix4fv(view_loc, 1, GL_FALSE, view)
-
-# The preview application loop
-while not glfw.window_should_close(window):
-    glfw.poll_events()
-
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
-
-    rot_y = pyrr.Matrix44.from_y_rotation(0.8 * glfw.get_time())
-    model = pyrr.matrix44.multiply(rot_y, model_pos)
-
-    # Draw the model
-    glBindVertexArray(VAO[0])
-    glBindTexture(GL_TEXTURE_2D, textures[0])  
-    glDrawArrays(GL_TRIANGLES, 0, len(model_indices))
-    glUniformMatrix4fv(model_loc, 1, GL_FALSE, model)
-
-    # Swap front and back buffers
-    glfw.swap_buffers(window)
-
-# Terminate GLFW, free up allocated resources
-glfw.terminate()
-
-class OpenGL:
+class ObjectSetup:
     def __init__(self):
+        self.VAO = glGenVertexArrays(1)
+        self.VBO = glGenBuffers(1)
+        self.textures = glGenTextures(1)
+        self.model_indices = None
+        self.model_buffer = None
+
+    def model_loader(self):
+        self.model_indices, self.model_buffer = ObjLoader.load_model("objects/pure_democracy.obj")
+
+        # Load the model textures - can be commented out if not needed
+        load_texture("objects/pure_democracy.png", self.textures)
+
+    def model_parameters(self):
+
+        # Model VAO
+        glBindVertexArray(self.VAO)
+
+        # Model VBO
+        glBindBuffer(GL_ARRAY_BUFFER, self.VBO)
+        glBufferData(GL_ARRAY_BUFFER, self.model_buffer.nbytes, self.model_buffer, GL_STATIC_DRAW)
+
+        # Model vertices
+        glEnableVertexAttribArray(0)
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, self.model_buffer.itemsize * 8, ctypes.c_void_p(0))
+
+        # Model textures
+        glEnableVertexAttribArray(1)
+        glVertexAttribPointer(1, 2, GL_FLOAT, GL_FALSE, self.model_buffer.itemsize * 8, ctypes.c_void_p(12))
+
+        # Model normals
+        glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, self.model_buffer.itemsize * 8, ctypes.c_void_p(20))
+        glEnableVertexAttribArray(2)
+
+    def setup(self):
+        self.model_loader()
+        self.model_parameters()
+
+
+class OpenGLContext:
+    def __init__(self):
+        if not glfw.init():
+            raise Exception("glfw can not be initialized!")
+        
+        # Set values for the context projection and initial values for window
+        self.pov = 45
+        self.near = 0.1
+        self.far = 1000 # increase this value if the object is not visible
+        self.window_width = 1280
+        self.window_height = 720
+
+        # Set window, hidden initially
+        glfw.window_hint(glfw.VISIBLE, glfw.FALSE)   
+        self.window = glfw.create_window(self.window_width, self.window_height, "Viewer", None, None)
+        if not self.window:
+            glfw.terminate()
+            raise Exception("glfw window can not be created!")
+        
+        # Set window position, size and callback function for window resize
+        glfw.set_window_pos(self.window, 400, 200)
+        glfw.set_window_size_callback(self.window, self.window_resize)
+        glfw.make_context_current(self.window)
+
+    def window_resize(self, window, width, height):  # update viewport, projection matrix and projection location
+        glViewport(0, 0, width, height)
+        projection = self.update_projection(self.pov, width, height, self.near, self.far)
+        glUniformMatrix4fv(self.proj_loc, 1, GL_FALSE, projection)
+
+    def update_projection(self, pov, window_width, window_height, near, far):
+        # fov, aspect ratio, near and far clipping plane
+        return pyrr.matrix44.create_perspective_projection_matrix(pov, window_width / window_height, near, far)
+
+    def prepare(self):
+        glUseProgram(self.shader)
+        glClearColor(0.1, 0.1, 0.1, 1)  # background color
+        glEnable(GL_BLEND)
         glEnable(GL_DEPTH_TEST)
-        glMatrixMode(GL_PROJECTION)
-        glLoadIdentity()     
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
 
-    def init(self):
-        pass
+        # Create the projection and view matrix
+        projection = self.update_projection(self.pov, self.window_width, self.window_height, self.near, self.far)
+        view = pyrr.matrix44.create_look_at(pyrr.Vector3([0, 0, 8]), pyrr.Vector3([0, 0, 0]), pyrr.Vector3([0, 1, 0]))  ## I suggest values in this vectors will be variables and will depend on opencv
 
-class Object:
-    def __init__(self):
-        pass
+        # Get the locations of the model, view and projection matrices
+        self.model_loc = glGetUniformLocation(self.shader, "model")
+        self.model_pos = pyrr.matrix44.create_from_translation(pyrr.Vector3([0, -5, -250]))  # last number is the distance from the camera, CONFIGURE DEPENDING ON THE OBJECT
 
-    def load(self):
-        pass
+        self.proj_loc = glGetUniformLocation(self.shader, "projection")
+        glUniformMatrix4fv(self.proj_loc, 1, GL_FALSE, projection)
 
-class Preview:
-    def __init__(self):
-        pass
+        view_loc = glGetUniformLocation(self.shader, "view")
+        glUniformMatrix4fv(view_loc, 1, GL_FALSE, view)
+    
+    def draw(self):
+        glfw.poll_events()  # poll GLFW for user inputs
 
-    def run(self):
-        pass
+        # Clear the color and depth buffers
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+
+        # Create the rotation matrix and multiply it with the model matrix
+        rot_y = pyrr.Matrix44.from_y_rotation(0.8 * glfw.get_time())
+        model = pyrr.matrix44.multiply(rot_y, self.model_pos)
+
+        # Draw the model
+        glBindVertexArray(self.object_setup.VAO)
+        glBindTexture(GL_TEXTURE_2D, self.object_setup.textures)
+        glDrawArrays(GL_TRIANGLES, 0, len(self.object_setup.model_indices))
+
+        # Update the model matrix
+        glUniformMatrix4fv(self.model_loc, 1, GL_FALSE, model)
+
+        # Swap front and back buffers
+        glfw.swap_buffers(self.window)
+
+    def run(self, object_setup):
+        self.object_setup = object_setup  # pass the object setup parameters to the context
+        glfw.show_window(self.window)  # show the initially hidden window
+        self.prepare()
+        while not glfw.window_should_close(self.window):
+            self.draw()
+        glfw.terminate()
 
 
 if __name__ == "__main__":
-    OpenGL().init()
-    Object().load()
-    Preview().run() # the idea is that preview will be able to be toggled on and off; for now we have to dig into opengl and divide preview / model init
+    # Create an instance of OpenGLContext
+    context = OpenGLContext()
+
+    # Load the shader program
+    context.shader = ShaderLoader.load_shader_program('shaders_src/vertex_src.txt', 'shaders_src/fragment_src.txt')
+
+    # Create an instance of ObjectSetup and call setup
+    object_setup = ObjectSetup()
+    object_setup.setup()
+
+    # Run the viewer - can be commented out if not needed
+    context.run(object_setup)
+
+    ## Still don't know which parts of the code are needed only for displaying, and which parts are needed to load the object
