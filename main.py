@@ -14,9 +14,12 @@ import numpy as np
 import webbrowser
 from PIL import Image
 from plyer import filechooser
+from threading import Thread
 
 # Common imports
 from main_helper import main_helper
+from main_calibration import CameraCalibration
+
 
 class ARmarkerEngine:
     def __init__(self, supported_imread_extensions,
@@ -54,48 +57,78 @@ class ARmarkerEngine:
         self.supported_videocapture_extensions = supported_videocapture_extensions
         self.supported_opengl_extensions = supported_opengl_extensions
 
-    def process(self, frame, object, object_type, object_extension):  # this will be crossroad for aruco / orb
-        return self.aruco_processing(frame, object, object_type, object_extension)  # If object selected, perform augmentation of aruco markers
+        # Initialize calibration
+        self.calibration_thread = None
 
+    def calibration(self, frame, arucoCorners, aruco_side_length):
+        if self.calibration_thread and self.calibration_thread.is_alive():
+            # Calibration is already in progress, don't start a new thread
+            return
+        
+        def calibrate_in_thread(self, frame, arucoCorners, aruco_side_length):
+            _, self.dist, self.mtx, _, _ = CameraCalibration().calibrate(frame, arucoCorners, aruco_side_length) 
+
+        # Start calibration in a separate thread
+        self.calibration_thread = Thread(target=calibrate_in_thread, args=(frame, arucoCorners, aruco_side_length))
+        self.calibration_thread.start()
+
+    def process(self, frame, object, object_type, object_extension):  # The receiving function
+        return self.aruco_processing(frame, object, object_type, object_extension)
+    
     def aruco_processing(self, frame, object, object_type, object_extension):
-        processed_frame = frame.copy()  # Create a copy of the frame to accumulate processed frames
+        processed_frame = frame.copy()  # Copy the frame to avoid mixing up
 
-        # Loop through the aruco dictionaries
+        # Loop through aruco dictionaries and aruco corners, apply augmentation
         for arucoDict in self.aruco_dictionaries:
-            arucoCorners, arucoIds, arucoRejected = cv2.aruco.detectMarkers(frame, cv2.aruco.getPredefinedDictionary(arucoDict), parameters=self.arucoParams)
+            self.aruco_detection(frame, arucoDict)
 
-            if object_type == "plain":
-                for arucoCorner in arucoCorners:
+            # 4 loops for 4 corners
+            for arucoCorner in self.arucoCorners:
+                if object_type == "plain":
                     if object_extension in self.supported_imread_extensions:
                         augment = cv2.imread(object)
                         processed_frame = self.plain_augmentation(arucoCorner, processed_frame, augment)
-                    if object_extension in self.supported_videocapture_extensions:  # to work later - full length video augmentation
-                        augment = cv2.VideoCapture(object)
-                        ret, augment = augment.read()
+
+                    elif object_extension in self.supported_videocapture_extensions:  ## to work later - full length video augmentation
+                        _, augment = cv2.VideoCapture(object).read()
                         processed_frame = self.plain_augmentation(arucoCorner, processed_frame, augment)
 
-            elif object_type == "volumetric":
-                for arucoCorner in arucoCorners:
-                    processed_frame = self.volumetric_augmentation(arucoCorner, processed_frame, object)
+                elif object_type == "volumetric":
+                    processed_frame = self.volumetric_augmentation(arucoCorner, processed_frame, augment)
 
-            # If no object selected, encircle detected aruco markers
-            else:
-                for arucoCorner in arucoCorners:
-                    # Find the numpy array of the corner points of the detected marker
-                    aruco_corners = np.int32(arucoCorner).reshape(-1, 2)
+                else:
+                    processed_frame = self.aruco_highlightning(processed_frame, arucoCorner)
+                    
+        return processed_frame
+    
+    def aruco_detection(self, frame, arucoDict):
+        self.arucoCorners, self.arucoIds, _ = cv2.aruco.detectMarkers(frame, cv2.aruco.getPredefinedDictionary(arucoDict), parameters=self.arucoParams)
 
-                    # Calculate the side length of the detected marker
-                    aruco_side_length = int(np.linalg.norm(aruco_corners[0] - aruco_corners[1]))
-                    polylines_thickness = int(aruco_side_length * 0.01)  # Second parameter is the thickness ratio
+        if self.arucoIds is not None:
+            self.aruco_parameters(frame)
 
-                    # Draw the polygon around each detected marker
-                    cv2.polylines(
-                        processed_frame,
-                        [aruco_corners],
-                        isClosed=True,
-                        color=(0, 255, 0),
-                        thickness=polylines_thickness
-                    )
+    def aruco_parameters(self, frame):
+        for arucoCorner in self.arucoCorners:
+            np_aruco_corners = self.aruco_np_corners(arucoCorner)
+
+        self.aruco_side_length = int(np.linalg.norm(np_aruco_corners[0] - np_aruco_corners[1]))
+
+        #for arucoId in range(len(self.arucoIds)):
+            # Update calibration
+            #self.calibration(frame, self.arucoCorners, self.aruco_side_length)
+            #self.rvec, self.tvec, _ = cv2.aruco.estimatePoseSingleMarkers(self.arucoCorners[arucoId], 0.05, self.mtx, self.dist)
+
+    def aruco_np_corners(self, arucoCorner):
+        return np.int32(arucoCorner).reshape(-1, 2)
+  
+    def aruco_highlightning(self, processed_frame, arucoCorner):
+        processed_frame = cv2.polylines(
+        processed_frame,
+        [self.aruco_np_corners(arucoCorner)],
+        isClosed=True,
+        color=(0, 255, 0),
+        thickness=int(self.aruco_side_length * 0.01)  # Second parameter is the thickness ratio
+        )
 
         return processed_frame
 
@@ -204,7 +237,8 @@ class UserApp(MDApp):
         texture = self.frame_to_texture(frame)
         self.root.ids.static_frame.texture = texture
 
-    def frame_to_texture(self, frame):
+    def frame_to_texture(self, frame):        
+
         # First process and THEN flip
         frame = self.ar_marker_engine.process(frame, self.object, self.object_type, self.object_extension)
         frame = cv2.flip(frame, 0)
@@ -340,7 +374,7 @@ class UserApp(MDApp):
         # Set supported extensions
         self.supported_imread_extensions = ["bmp", "jpeg", "jpg", "jpe", "jp2", "png", "webp", "pbm", "pgm", "ppm", "pxm", "pnm", "sr", "ras", "tiff", "tif", "exr", "hdr", "pic"]
         self.supported_videocapture_extensions = ["gif", "mp4", "avi", "mov", "mkv", "wmv", "flv", "webm", "mpg", "mpeg", "ts", "m4v"]
-        self.supported_opengl_extensions = ["obj"]
+        self.supported_opengl_extensions = ["obj"] ## most imread and videocapture extensions were not tested!
 
         # Initialize ARmarkerEngine and pass supported extensions
         self.ar_marker_engine = ARmarkerEngine(self.supported_imread_extensions, self.supported_videocapture_extensions, self.supported_opengl_extensions)
