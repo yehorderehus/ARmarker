@@ -5,11 +5,11 @@ from OpenGL.GL.shaders import compileProgram, compileShader
 # Other imports
 import glfw
 import pyrr
+from PIL import Image
 
 # Common imports
-from main_objtexloader import load_texture
-from main_objloader import ObjLoader
-from main import ARmarkerEngine
+from model_loader import ModelLoader
+
 
 class ShaderLoader:
     @staticmethod
@@ -25,8 +25,8 @@ class ShaderLoader:
                               compileShader(fragment_src, GL_FRAGMENT_SHADER))
 
 
-class ObjectSetup:
-    def __init__(self):
+class ModelSetup:
+    def __init__(self) -> None:
         self.VAO = glGenVertexArrays(1)
         self.VBO = glGenBuffers(1)
         self.textures = glGenTextures(1)
@@ -34,13 +34,32 @@ class ObjectSetup:
         self.model_buffer = None
 
     def model_loader(self):
-        self.model_indices, self.model_buffer = ObjLoader.load_model("objects/pure_democracy.obj")
+        self.model_indices, self.model_buffer = ModelLoader.load_model("models/pure_democracy.obj")
 
         # Load the model textures - can be commented out if not needed
-        load_texture("objects/pure_democracy.png", self.textures)
+        self.texture_loader("models/pure_democracy.png", self.textures)
+
+    def texture_loader(self, path, texture):
+        # Bind texture
+        glBindTexture(GL_TEXTURE_2D, texture)
+
+        # Set the texture wrapping parameters
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT)
+
+        # Set texture filtering parameters
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR)
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
+
+        # Load image
+        image = Image.open(path)
+        image = image.transpose(Image.FLIP_TOP_BOTTOM)
+        img_data = image.convert("RGBA").tobytes()
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, image.width, image.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, img_data)
+
+        return texture
 
     def model_parameters(self):
-
         # Model VAO
         glBindVertexArray(self.VAO)
 
@@ -66,14 +85,14 @@ class ObjectSetup:
 
 
 class OpenGLContext:
-    def __init__(self):
+    def __init__(self) -> None:
         if not glfw.init():
             raise Exception("glfw can not be initialized!")
         
         # Set values for the context projection and initial values for window
         self.pov = 45
         self.near = 0.1
-        self.far = 1000 # increase this value if the object is not visible
+        self.far = 1000  # Increase this value if model is not visible
         self.window_width = 1280
         self.window_height = 720
 
@@ -100,18 +119,18 @@ class OpenGLContext:
 
     def prepare(self):
         glUseProgram(self.shader)
-        glClearColor(0.1, 0.1, 0.1, 1)  # background color
+        glClearColor(0.1, 0.1, 0.1, 0)  # Transparent background
         glEnable(GL_BLEND)
         glEnable(GL_DEPTH_TEST)
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
 
         # Create the projection and view matrix
         projection = self.update_projection(self.pov, self.window_width, self.window_height, self.near, self.far)
-        view = pyrr.matrix44.create_look_at(pyrr.Vector3([0, 0, 8]), pyrr.Vector3([0, 0, 0]), pyrr.Vector3([0, 1, 0]))  ## I suggest values in this vectors will be variables and will depend on opencv
+        view = pyrr.matrix44.create_look_at(pyrr.Vector3([0, 0, 8]), pyrr.Vector3([0, 0, 0]), pyrr.Vector3([0, 1, 0]))  # I suggest values in this vectors will be variables and will depend on opencv
 
         # Get the locations of the model, view and projection matrices
         self.model_loc = glGetUniformLocation(self.shader, "model")
-        self.model_pos = pyrr.matrix44.create_from_translation(pyrr.Vector3([0, -5, -250]))  # last number is the distance from the camera, CONFIGURE DEPENDING ON THE OBJECT
+        self.model_pos = pyrr.matrix44.create_from_translation(pyrr.Vector3([0, -5, -250]))  # Last number is the distance from the camera, CONFIGURE DEPENDING ON THE MODEL
 
         self.proj_loc = glGetUniformLocation(self.shader, "projection")
         glUniformMatrix4fv(self.proj_loc, 1, GL_FALSE, projection)
@@ -120,7 +139,7 @@ class OpenGLContext:
         glUniformMatrix4fv(view_loc, 1, GL_FALSE, view)
     
     def draw(self):
-        glfw.poll_events()  # poll GLFW for user inputs
+        glfw.poll_events()  # Poll GLFW for user inputs
 
         # Clear the color and depth buffers
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
@@ -130,9 +149,9 @@ class OpenGLContext:
         model = pyrr.matrix44.multiply(rot_y, self.model_pos)
 
         # Draw the model
-        glBindVertexArray(self.object_setup.VAO)
-        glBindTexture(GL_TEXTURE_2D, self.object_setup.textures)
-        glDrawArrays(GL_TRIANGLES, 0, len(self.object_setup.model_indices))
+        glBindVertexArray(self.model_setup.VAO)
+        glBindTexture(GL_TEXTURE_2D, self.model_setup.textures)
+        glDrawArrays(GL_TRIANGLES, 0, len(self.model_setup.model_indices))
 
         # Update the model matrix
         glUniformMatrix4fv(self.model_loc, 1, GL_FALSE, model)
@@ -140,9 +159,9 @@ class OpenGLContext:
         # Swap front and back buffers
         glfw.swap_buffers(self.window)
 
-    def run(self, object_setup):
-        self.object_setup = object_setup  # pass the object setup parameters to the context
-        glfw.show_window(self.window)  # show the initially hidden window
+    def run(self, model_setup):
+        self.model_setup = model_setup  # Pass the model setup parameters to the context
+        glfw.show_window(self.window)  # Show the initially hidden window
         self.prepare()
         while not glfw.window_should_close(self.window):
             self.draw()
@@ -156,11 +175,9 @@ if __name__ == "__main__":
     # Load the shader program
     context.shader = ShaderLoader.load_shader_program('shaders_src/vertex_src.txt', 'shaders_src/fragment_src.txt')
 
-    # Create an instance of ObjectSetup and call setup
-    object_setup = ObjectSetup()
-    object_setup.setup()
+    # Create an instance of ModelSetup and call setup
+    model_setup = ModelSetup()
+    model_setup.setup()
 
     # Run the viewer - can be commented out if not needed
-    context.run(object_setup)
-
-    ## Still don't know which parts of the code are needed only for displaying, and which parts are needed to load the object
+    context.run(model_setup)
