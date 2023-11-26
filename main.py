@@ -1,6 +1,7 @@
 # Kivy and KivyMD imports
 from kivy.lang import Builder
 from kivy.clock import Clock
+from kivy.core.window import Window
 from kivy.graphics.texture import Texture
 from kivy.properties import ObjectProperty
 from kivymd.app import MDApp
@@ -18,7 +19,7 @@ from main_helper import main_helper
 from detection import MarkerDetection
 
 
-class UserApp(MDApp):
+class UserApp(MDApp):  # TODO optimization, work with memory
     def __init__(self) -> None:
         super().__init__()
 
@@ -30,10 +31,12 @@ class UserApp(MDApp):
 
         # Initialize variables
         self.cap_index = 0
-        self.media_file = None
-        self.media_extension = None
-        self.asset_file = None
-        self.asset_extension = None
+        self.media_file, self.media_extension = None, None
+        self.asset_file, self.asset_extension = None, None
+        self.screen_width, self.screen_height = Window.size
+
+        # Bind the on_size event and update screen width and screen height when the window size changes
+        Window.bind(on_resize=lambda instance, width, height: setattr(self, 'screen_width', width) or setattr(self, 'screen_height', height))
 
         # Start execution by accessing the camera
         self.live_broadcast()
@@ -99,8 +102,8 @@ class UserApp(MDApp):
         self.root.ids.static_frame.texture = self.frame_to_texture(frame)
 
     def frame_to_texture(self, frame):        
-        # First process and THEN flip
-        frame = self.marker_detection.process(frame, self.asset_file, self.asset_extension)
+        # Process the frame and flip it vertically
+        frame = self.marker_detection.process(frame, self.asset_file, self.asset_extension, self.screen_width, self.screen_height)
         frame = cv2.flip(frame, 0)
 
         # Convert the OpenCV frame to Kivy texture
@@ -207,6 +210,9 @@ class UserApp(MDApp):
         self.title = "ARmarker tool"
         self.theme_cls.theme_style = "Light"
         self.theme_cls.primary_palette = "BlueGray"
+        self.theme_cls.primary_hue = "500"
+        self.theme_cls.accent_palette = "Gray"
+        self.theme_cls.accent_hue = "500"
 
         return Builder.load_string(main_helper)
 
