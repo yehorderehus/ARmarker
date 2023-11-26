@@ -44,10 +44,10 @@ class MarkerDetection:
             cv2.aruco.DICT_APRILTAG_36h11
         ]
 
-    def process(self, frame, asset_file, asset_extension):  # The receiving function
-        return self.aruco_processing(frame, asset_file, asset_extension)
+    def process(self, frame, asset_file, asset_extension, screen_width, screen_height):  # The receiving function
+        return self.aruco_processing(frame, asset_file, asset_extension, screen_width, screen_height)
     
-    def aruco_processing(self, frame, asset_file, asset_extension):
+    def aruco_processing(self, frame, asset_file, asset_extension, screen_width, screen_height):
         processed_frame = frame.copy()  # Copy the frame to avoid mixing up
 
         # Loop through aruco dictionaries and aruco corners, apply augmentation
@@ -60,13 +60,13 @@ class MarkerDetection:
                     asset = cv2.imread(asset_file)
                     processed_frame = FrameAugmentation().plain_augmentation(arucoCorner, processed_frame, asset)
 
-                elif asset_extension in self.videocapture_extensions:  ## to work later - full length video augmentation
+                elif asset_extension in self.videocapture_extensions:  # TODO full length video augmentation
                     _, asset = cv2.VideoCapture(asset_file).read()
                     processed_frame = FrameAugmentation().plain_augmentation(arucoCorner, processed_frame, asset)
 
                 elif asset_extension in self.opengl_extensions:
-                    asset = asset_file
-                    processed_frame = FrameAugmentation().volumetric_augmentation(arucoCorner, processed_frame, asset)
+                    asset = asset_file  # TODO call loading model here
+                    processed_frame = FrameAugmentation().volumetric_augmentation(arucoCorner, processed_frame, asset, screen_width, screen_height)
 
                 else:
                     processed_frame = self.aruco_highlightning(processed_frame, arucoCorner)

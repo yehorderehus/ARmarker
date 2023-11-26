@@ -3,6 +3,9 @@ import cv2
 import numpy as np
 from PIL import Image
 
+# Common imports
+# from model_render import ModelSetup, ModelRender
+
 
 class FrameAugmentation:
     def __init__(self) -> None:
@@ -41,5 +44,5 @@ class FrameAugmentation:
 
         return shot + augment
 
-    def volumetric_augmentation(self):
+    def volumetric_augmentation(self, bbox, shot, augment, width, height):
         pass
