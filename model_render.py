@@ -5,6 +5,7 @@ from OpenGL.GL.shaders import compileProgram, compileShader
 # Other imports
 import glfw
 import pyrr
+import numpy as np
 from PIL import Image
 
 # Common imports
@@ -25,19 +26,23 @@ class ShaderLoader:
                               compileShader(fragment_src, GL_FRAGMENT_SHADER))
 
 
-class ModelSetup:
-    def __init__(self) -> None:
+class ModelSetUp:
+    def __init__(self, file, texture_file=None) -> None:
+        # Set initial parameters
         self.VAO = glGenVertexArrays(1)
         self.VBO = glGenBuffers(1)
         self.textures = glGenTextures(1)
         self.model_indices = None
         self.model_buffer = None
 
-    def model_loader(self):
-        self.model_indices, self.model_buffer = ModelLoader.load_model("models/pure_democracy.obj")
+        # Set model itself
+        self.model_loader(file)
+        if texture_file:
+            self.texture_loader(texture_file, self.textures)
+        self.model_parameters()
 
-        # Load the model textures - can be commented out if not needed
-        self.texture_loader("models/pure_democracy.png", self.textures)
+    def model_loader(self, path):
+        self.model_indices, self.model_buffer = ModelLoader.load_model(path)
 
     def texture_loader(self, path, texture):
         # Bind texture
@@ -54,10 +59,8 @@ class ModelSetup:
         # Load image
         image = Image.open(path)
         image = image.transpose(Image.FLIP_TOP_BOTTOM)
-        img_data = image.convert("RGBA").tobytes()
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, image.width, image.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, img_data)
-
-        return texture
+        image_data = image.convert("RGBA").tobytes()
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, image.width, image.height, 0, GL_RGBA, GL_UNSIGNED_BYTE, image_data)
 
     def model_parameters(self):
         # Model VAO
@@ -79,105 +82,160 @@ class ModelSetup:
         glVertexAttribPointer(2, 3, GL_FLOAT, GL_FALSE, self.model_buffer.itemsize * 8, ctypes.c_void_p(20))
         glEnableVertexAttribArray(2)
 
-    def setup(self):
-        self.model_loader()
-        self.model_parameters()
 
+class OpenGLContext:  # TODO Functions optimization (applies to other parts of the program as well)
+    def __init__(self, pov, near, far, window_width, window_height) -> None:
+        self.pov, self.near, self.far = pov, near, far
 
-class OpenGLContext:
-    def __init__(self) -> None:
         if not glfw.init():
             raise Exception("glfw can not be initialized!")
         
-        # Set values for the context projection and initial values for window
-        self.pov = 45
-        self.near = 0.1
-        self.far = 1000  # Increase this value if model is not visible
-        self.window_width = 1280
-        self.window_height = 720
-
-        # Set window, hidden initially
-        glfw.window_hint(glfw.VISIBLE, glfw.FALSE)   
-        self.window = glfw.create_window(self.window_width, self.window_height, "Viewer", None, None)
+        # Set window, hidden by default
+        glfw.window_hint(glfw.VISIBLE, glfw.FALSE)
+        self.window = glfw.create_window(window_width, window_height, "OpenGL Context", None, None)
         if not self.window:
             glfw.terminate()
             raise Exception("glfw window can not be created!")
         
-        # Set window position, size and callback function for window resize
-        glfw.set_window_pos(self.window, 400, 200)
-        glfw.set_window_size_callback(self.window, self.window_resize)
+        # Make the context current
         glfw.make_context_current(self.window)
-
-    def window_resize(self, window, width, height):  # update viewport, projection matrix and projection location
-        glViewport(0, 0, width, height)
-        projection = self.update_projection(self.pov, width, height, self.near, self.far)
-        glUniformMatrix4fv(self.proj_loc, 1, GL_FALSE, projection)
-
-    def update_projection(self, pov, window_width, window_height, near, far):
-        # fov, aspect ratio, near and far clipping plane
-        return pyrr.matrix44.create_perspective_projection_matrix(pov, window_width / window_height, near, far)
-
-    def prepare(self):
+        
+        # Load shader program and set OpenGL parameters
+        self.shader = ShaderLoader.load_shader_program('shaders_src/vertex_src.txt', 'shaders_src/fragment_src.txt')
         glUseProgram(self.shader)
-        glClearColor(0.1, 0.1, 0.1, 0)  # Transparent background
-        glEnable(GL_BLEND)
+        glClearColor(0.0, 0.0, 0.0, 0.0)
         glEnable(GL_DEPTH_TEST)
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+        
+    def update_model(self):
+        # Set up perspective projection matrix
+        projection = pyrr.matrix44.create_perspective_projection_matrix(
+            self.pov,
+            self.window_width / self.window_height,
+            self.near,
+            self.far
+        )
 
-        # Create the projection and view matrix
-        projection = self.update_projection(self.pov, self.window_width, self.window_height, self.near, self.far)
-        view = pyrr.matrix44.create_look_at(pyrr.Vector3([0, 0, 8]), pyrr.Vector3([0, 0, 0]), pyrr.Vector3([0, 1, 0]))  # I suggest values in this vectors will be variables and will depend on opencv
+        # Set the viewport based on window dimensions
+        glViewport(0, 0, self.window_width, self.window_height)
 
-        # Get the locations of the model, view and projection matrices
-        self.model_loc = glGetUniformLocation(self.shader, "model")
-        self.model_pos = pyrr.matrix44.create_from_translation(pyrr.Vector3([0, -5, -250]))  # Last number is the distance from the camera, CONFIGURE DEPENDING ON THE MODEL
-
-        self.proj_loc = glGetUniformLocation(self.shader, "projection")
-        glUniformMatrix4fv(self.proj_loc, 1, GL_FALSE, projection)
-
+        # Get the locations of shader variables
+        model_loc = glGetUniformLocation(self.shader, "model")
+        proj_loc = glGetUniformLocation(self.shader, "projection")
         view_loc = glGetUniformLocation(self.shader, "view")
-        glUniformMatrix4fv(view_loc, 1, GL_FALSE, view)
-    
-    def draw(self):
-        glfw.poll_events()  # Poll GLFW for user inputs
+
+        # Set the projection matrix in the shader
+        glUniformMatrix4fv(proj_loc, 1, GL_FALSE, projection)
+
+        # Set up the model position (translation matrix)
+        model_pos = pyrr.matrix44.create_from_translation(pyrr.Vector3([0, -5, -250]))
+
+        # Poll GLFW for user inputs
+        glfw.poll_events()
 
         # Clear the color and depth buffers
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
 
-        # Create the rotation matrix and multiply it with the model matrix
+        # Rotate the model around the Y-axis over time
         rot_y = pyrr.Matrix44.from_y_rotation(0.8 * glfw.get_time())
-        model = pyrr.matrix44.multiply(rot_y, self.model_pos)
 
-        # Draw the model
+        # Combine rotation and translation to get the model matrix
+        model = pyrr.matrix44.multiply(rot_y, model_pos)
+
+        # Bind the vertex array object and texture
         glBindVertexArray(self.model_setup.VAO)
         glBindTexture(GL_TEXTURE_2D, self.model_setup.textures)
+
+        # Draw the model using triangles
         glDrawArrays(GL_TRIANGLES, 0, len(self.model_setup.model_indices))
 
-        # Update the model matrix
-        glUniformMatrix4fv(self.model_loc, 1, GL_FALSE, model)
+        # Set up the view matrix (camera position and orientation)
+        view = pyrr.matrix44.create_look_at(
+            pyrr.Vector3([0, 0, 8]),
+            pyrr.Vector3([0, 0, 0]),
+            pyrr.Vector3([0, 1, 0])
+        )
 
-        # Swap front and back buffers
+        # Set the view and model matrices in the shader
+        glUniformMatrix4fv(view_loc, 1, GL_FALSE, view)
+        glUniformMatrix4fv(model_loc, 1, GL_FALSE, model)
+
+        # Swap the front and back buffers to display the rendered image
         glfw.swap_buffers(self.window)
 
-    def run(self, model_setup):
-        self.model_setup = model_setup  # Pass the model setup parameters to the context
-        glfw.show_window(self.window)  # Show the initially hidden window
-        self.prepare()
-        while not glfw.window_should_close(self.window):
-            self.draw()
-        glfw.terminate()
+    def draw_background(self):  # TODO In progress, sketch
+        glEnable(GL_TEXTURE_2D)
+        
+        texture_name = glGenTextures(1)
+        glBindTexture(GL_TEXTURE_2D, texture_name)
+        
+        # Set texture parameters (wrap and filter)
+        glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
+        glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
+        glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
+        glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR) 
 
+        # Load image and set texture data
+        frame = Image.open("media/robots.webp")
+        frame = frame.resize((self.window_width, self.window_height))
+        frame = frame.tobytes("raw", "RGBA")   
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, self.window_width, self.window_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, frame)
 
+        # Draw the textured quad
+        glBegin(GL_QUADS)
+        glTexCoord2f(0.0, 0.0); glVertex2f(-1.0, 1.0)
+        glTexCoord2f(0.0, 1.0); glVertex2f(-1.0, -1.0)
+        glTexCoord2f(1.0, 1.0); glVertex2f(1.0, -1.0)
+        glTexCoord2f(1.0, 0.0); glVertex2f(1.0, 1.0)
+        glEnd()
+
+        # Disable texture
+        glDisable(GL_TEXTURE_2D)
+
+    def capture_frame(self):
+        # Create an array to store the pixel data
+        data = glReadPixels(0, 0, self.window_width, self.window_height, GL_BGRA, GL_UNSIGNED_BYTE)
+
+        # Convert the pixel data to a NumPy array
+        return np.frombuffer(data, dtype=np.uint8).reshape(self.window_height, self.window_width, 4)
+
+    def run(self, window_width, window_height):
+        self.window_width, self.window_height = window_width, window_height
+
+        # Set the context window size
+        glfw.set_window_size(self.window, window_width, window_height)
+    
+        # Constantly update the model
+        self.update_model()
+
+        return self.capture_frame()
+
+""""""
+# Will be called from augmentation.py, this stays for testing purposes
 if __name__ == "__main__":
-    # Create an instance of OpenGLContext
-    context = OpenGLContext()
+    import cv2
 
-    # Load the shader program
-    context.shader = ShaderLoader.load_shader_program('shaders_src/vertex_src.txt', 'shaders_src/fragment_src.txt')
+    # Set initial TEST parameters
+    pov, near, far, frame_width, frame_height = 45, 0.1, 1000, 1280, 720
+    model_file, model_texture_file = "models/pure_democracy.obj", "models/pure_democracy.png"
+    background_ = "media/robots.webp"
 
-    # Create an instance of ModelSetup and call setup
-    model_setup = ModelSetup()
-    model_setup.setup()
+    # Create an instance of OpenGLContext and initialize OpenGL parameters
+    context = OpenGLContext(pov, near, far, frame_width, frame_height)
 
-    # Run the viewer - can be commented out if not needed
-    context.run(model_setup)
+    # Create an instance of ModelSetup and pass it to the context
+    model_setup = ModelSetUp(model_file, model_texture_file)
+    context.model_setup = model_setup
+
+    # Create TEST opencv window and set its size
+    cv2.namedWindow("OpenCV Frame", cv2.WINDOW_NORMAL)
+    cv2.resizeWindow("OpenCV Frame", frame_width, frame_height)
+    
+    # Initialize the TEST loop; window size can be changed by dragging only the opencv window
+    while not glfw.window_should_close(context.window):
+        window_size = cv2.getWindowImageRect("OpenCV Frame")
+        frame_width, frame_height = window_size[2], window_size[3]
+        frame = context.run(frame_width, frame_height)  # Run the context and get the frame
+        frame = cv2.flip(frame, 0)
+        glfw.show_window(context.window)
+        cv2.imshow("OpenCV Frame", frame)
+""""""
