@@ -34,12 +34,19 @@ class FrameAugmentation:
         augment = np.array(background)
 
         # Find numpy arrays of the corner points of the shot and the augment
-        points_shot = np.array([top_left, top_right, bottom_right, bottom_left])
-        points_augment = np.array([[0, 0], [side_length, 0], [side_length, side_length], [0, side_length]])
+        points_shot = np.array([top_left, top_right,
+                                bottom_right, bottom_left])
+        points_augment = np.array([[0, 0], [side_length, 0],
+                                   [side_length, side_length],
+                                   [0, side_length]])
 
-        # Calculate the transformation matrix and warp the augment, fill the shot with the processed augment
-        matrix = cv2.getPerspectiveTransform(points_augment.astype(np.float32), points_shot.astype(np.float32))
-        augment = cv2.warpPerspective(augment, matrix, (shot.shape[1], shot.shape[0]))
+        # Calculate the transformation matrix and warp the augment
+        matrix = cv2.getPerspectiveTransform(points_augment.astype(
+            np.float32), points_shot.astype(np.float32))
+        augment = cv2.warpPerspective(augment, matrix,
+                                      (shot.shape[1], shot.shape[0]))
+
+        # Fill the shot with the processed augment
         cv2.fillConvexPoly(shot, points_shot.astype(int), (0, 0, 0), 16)
 
         return shot + augment

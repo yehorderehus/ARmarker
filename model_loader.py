@@ -14,7 +14,7 @@ class ModelLoader:
             elif data_type == 'int':
                 coordinates.append(int(d)-1)
 
-    @staticmethod  # Sorted vertex buffer for use with glDrawArrays function
+    @staticmethod  # Sorted vertex buffer for use with glDrawArrays
     def create_sorted_vertex_buffer(indices_data, vertices, textures, normals):
         for i, ind in enumerate(indices_data):
             if i % 3 == 0:  # Sort the vertex coordinates
@@ -30,8 +30,9 @@ class ModelLoader:
                 end = start + 3
                 ModelLoader.buffer.extend(normals[start:end])
 
-    @staticmethod # TODO unsorted vertex buffer for use with glDrawElements function
-    def create_unsorted_vertex_buffer(indices_data, vertices, textures, normals):
+    @staticmethod  # TODO Unsorted vertex buffer for use with glDrawElements
+    def create_unsorted_vertex_buffer(indices_data, vertices,
+                                      textures, normals):
         num_verts = len(vertices) // 3
 
         for i1 in range(num_verts):
@@ -58,13 +59,12 @@ class ModelLoader:
             end = start + 8
             print(buffer[start:end])
 
-
     @staticmethod
     def load_model(file, sorted=True):
-        vert_coords = []  # Has to contain all the vertex coordinates
-        tex_coords = []  # Has to contain all the texture coordinates
-        norm_coords = []  # Has to contain all the vertex normals
-        all_indices = []  # Has to contain all the vertex, texture, and normal indices
+        vert_coords = []  # Has to contain the vertex coordinates
+        tex_coords = []  # Has to contain the texture coordinates
+        norm_coords = []  # Has to contain the vertex normals
+        all_indices = []  # Has to contain the vertex, texture, normal indices
         indices = []  # Has to contain the indices for indexed drawing
 
         with open(file, 'r') as f:
@@ -72,30 +72,41 @@ class ModelLoader:
             while line:
                 values = line.split()
 
-                # Check if values list is not empty before accessing its elements
+                # Check if values list is not empty before indexing
                 if values:
                     if values[0] == 'v':
-                        ModelLoader.search_data(values, vert_coords, 'v', 'float')
+                        ModelLoader.search_data(values, vert_coords,
+                                                'v', 'float')
                     elif values[0] == 'vt':
-                        ModelLoader.search_data(values, tex_coords, 'vt', 'float')
+                        ModelLoader.search_data(values, tex_coords,
+                                                'vt', 'float')
                     elif values[0] == 'vn':
-                        ModelLoader.search_data(values, norm_coords, 'vn', 'float')
+                        ModelLoader.search_data(values, norm_coords,
+                                                'vn', 'float')
                     elif values[0] == 'f':
                         for value in values[1:]:
                             val = value.split('/')
-                            ModelLoader.search_data(val, all_indices, 'f', 'int')
+                            ModelLoader.search_data(val, all_indices,
+                                                    'f', 'int')
                             indices.append(int(val[0]) - 1)
 
                 line = f.readline()
 
         if sorted:
             # Use with glDrawArrays
-            ModelLoader.create_sorted_vertex_buffer(all_indices, vert_coords, tex_coords, norm_coords)
+            ModelLoader.create_sorted_vertex_buffer(all_indices, vert_coords,
+                                                    tex_coords, norm_coords)
         else:
             # Use with glDrawElements
-            ModelLoader.create_unsorted_vertex_buffer(all_indices, vert_coords, tex_coords, norm_coords)
+            ModelLoader.create_unsorted_vertex_buffer(all_indices, vert_coords,
+                                                      tex_coords, norm_coords)
 
-        buffer = ModelLoader.buffer.copy()  # Create a local copy of the buffer list, otherwise it will overwrite the static field buffer
-        ModelLoader.buffer = []  # After the copy, make sure to set it back to an empty list
+        # Create a local copy of the buffer list,
+        # otherwise it will overwrite the static field buffer
+        buffer = ModelLoader.buffer.copy()
 
-        return np.array(indices, dtype='uint32'), np.array(buffer, dtype='float32')
+        # After the copy, make sure to set it back to an empty list
+        ModelLoader.buffer = []
+
+        return np.array(indices, dtype='uint32'), np.array(buffer,
+                                                           dtype='float32')

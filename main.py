@@ -23,11 +23,27 @@ class UserApp(MDApp):  # TODO optimization, work with memory
     def __init__(self) -> None:
         super().__init__()
 
-        # Set supported extensions and pass them to MarkerDetection (with it instantiated)
-        self.imread_extensions = ["bmp", "jpeg", "jpg", "jpe", "jp2", "png", "webp", "pbm", "pgm", "ppm", "pxm", "pnm", "sr", "ras", "tiff", "tif", "exr", "hdr", "pic"]
-        self.videocapture_extensions = ["gif", "mp4", "avi", "mov", "mkv", "wmv", "flv", "webm", "mpg", "mpeg", "ts", "m4v"]
-        self.opengl_extensions = ["obj"]  # Most imread and videocapture extensions were NOT tested! as image and video ones
-        self.marker_detection = MarkerDetection(self.imread_extensions, self.videocapture_extensions, self.opengl_extensions) 
+        # Set supported extensions
+        # TODO Most imread and videocapture extensions were NOT tested
+        self.imread_extensions = [
+            "bmp", "jpeg", "jpg", "jpe", "jp2",
+            "png", "webp", "pbm", "pgm", "ppm",
+            "pxm", "pnm", "sr", "ras", "tiff",
+            "tif", "exr", "hdr", "pic"
+        ]
+        self.videocapture_extensions = [
+            "gif", "mp4", "avi", "mov", "mkv",
+            "wmv", "flv", "webm", "mpg", "mpeg",
+            "ts", "m4v"
+        ]
+        self.opengl_extensions = ["obj"]
+
+        # Initialize the marker detection class and pass supported extensions
+        self.marker_detection = MarkerDetection(
+            self.imread_extensions,
+            self.videocapture_extensions,
+            self.opengl_extensions
+        )
 
         # Initialize variables
         self.cap_index = 0
@@ -35,15 +51,19 @@ class UserApp(MDApp):  # TODO optimization, work with memory
         self.asset_file, self.asset_extension = None, None
         self.screen_width, self.screen_height = Window.size
 
-        # Bind the on_size event and update screen width and screen height when the window size changes
-        Window.bind(on_resize=lambda instance, width, height: setattr(self, 'screen_width', width) or setattr(self, 'screen_height', height))
+        # Bind the resize event to update the screen size
+        Window.bind(on_resize=lambda instance,
+                    width, height: setattr(self, 'screen_width', width)
+                    or setattr(self, 'screen_height', height))
 
         # Start execution by accessing the camera
         self.live_broadcast()
 
     def live_broadcast(self):
         if not cv2.VideoCapture(self.cap_index).isOpened():
-            self.error_popup("Camera Error", "Unable to access the camera. Please check the camera connection.")
+            self.error_popup("Camera Error",
+                             "Unable to access the camera. "
+                             "Please check the camera connection.")
             self.root.ids.live_frame.texture = None
         else:
             self.cap = cv2.VideoCapture(self.cap_index)
@@ -59,9 +79,12 @@ class UserApp(MDApp):  # TODO optimization, work with memory
 
                 if ret:
                     # Convert and update the live frame
-                    self.root.ids.live_frame.texture = self.frame_to_texture(frame)
+                    self.root.ids.live_frame.texture = \
+                        self.frame_to_texture(frame)
 
-            self.update_live_event = Clock.schedule_interval(update_live, 1.0 / fps)  # Update at specified FPS through kivy.clock
+            # Update at specified FPS through kivy.clock
+            self.update_live_event = Clock.schedule_interval(
+                update_live, 1.0 / fps)
 
     def update_static_video(self, media=None):
         if not media:
@@ -78,18 +101,21 @@ class UserApp(MDApp):  # TODO optimization, work with memory
             fps = 30
 
         def update_video(dt):
-            if hasattr(self, 'cap_video') and self.cap_video.isOpened() and self.video_loop:
+            if hasattr(self, 'cap_video') and self.video_loop:
                 ret, frame = self.cap_video.read()
 
                 if ret:
                     # Convert and update the static frame
-                    self.root.ids.static_frame.texture = self.frame_to_texture(frame)
+                    self.root.ids.static_frame.texture = \
+                        self.frame_to_texture(frame)
 
                 else:
                     # Video ended, release the video capture
                     self.cap_video.set(cv2.CAP_PROP_POS_FRAMES, 0)
 
-        self.update_static_video_event = Clock.schedule_interval(update_video, 1.0 / fps)  # Update at specified FPS through kivy.clock
+        # Update at specified FPS through kivy.clock
+        self.update_static_video_event = Clock.schedule_interval(
+            update_video, 1.0 / fps)
 
     def update_static_image(self, media=None):
         if not media:
@@ -101,14 +127,17 @@ class UserApp(MDApp):  # TODO optimization, work with memory
         # Convert and update the static frame
         self.root.ids.static_frame.texture = self.frame_to_texture(frame)
 
-    def frame_to_texture(self, frame):        
+    def frame_to_texture(self, frame):
         # Process the frame and flip it vertically
-        frame = self.marker_detection.process(frame, self.asset_file, self.asset_extension, self.screen_width, self.screen_height)
+        frame = self.marker_detection.process(
+            frame, self.asset_file, self.asset_extension,
+            self.screen_width, self.screen_height)
         frame = cv2.flip(frame, 0)
 
         # Convert the OpenCV frame to Kivy texture
         buf = frame.tobytes()
-        texture = Texture.create(size=(frame.shape[1], frame.shape[0]), colorfmt='bgr')
+        texture = Texture.create(size=(frame.shape[1],
+                                       frame.shape[0]), colorfmt='bgr')
         texture.blit_buffer(buf, colorfmt='bgr', bufferfmt='ubyte')
 
         return texture
@@ -146,7 +175,10 @@ class UserApp(MDApp):  # TODO optimization, work with memory
 
             self.video_loop = False  # Stop looping
 
-            if self.asset_extension in self.imread_extensions or self.asset_extension in self.videocapture_extensions:
+            if (
+                self.asset_extension in self.imread_extensions or
+                self.asset_extension in self.videocapture_extensions
+            ):
                 if self.media_extension in self.imread_extensions:
                     self.update_static_image(self.media_file)
                 elif self.media_extension in self.videocapture_extensions:

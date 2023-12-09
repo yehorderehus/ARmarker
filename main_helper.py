@@ -55,7 +55,8 @@ main_helper = """
                 theme_text_color: "Secondary"
                 on_press:
                     root.nav_drawer.set_state("close")
-                    app.open_url("# to set") 
+                    app.open_url("# to set")
+
 MDScreen:
     MDNavigationLayout:
         MDScreenManager:
