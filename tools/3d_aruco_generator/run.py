@@ -45,7 +45,7 @@ def create_input():
     return indented_inputs
 
 def run_generate_aruco():
-    command = "python generate_aruco.py"
+    command = r"python tools\3d_aruco_generator\generate_aruco.py"
 
     try:
         inputs = create_input()

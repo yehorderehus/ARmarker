@@ -9,11 +9,11 @@ Credits and detailed information: [GitHub Repository](https://github.com/imontes
 Run the following command to generate the STL file with predefined parameters:
 
 ```bash
-python run.py
+python tools\3d_aruco_generator\run.py
 ```
 
 To customize the parameters, you can either modify the 'run.py' file or manually run the following command:
 
 ```bash
-python generate_aruco.py
+python tools\3d_aruco_generator\generate_aruco.py
 ```
