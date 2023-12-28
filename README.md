@@ -15,4 +15,5 @@ This project is aimed at replacing ArUco and ORB markers, both from OpenCV, with
 + [Blender object display](https://github.com/AshishChouhan85-zz/BLENDER-OBJECT-DISPLAY-USING-AR/tree/master)
 + [Loading .obj models](https://github.com/amengede/getIntoGameDev/tree/main/pyopengl%202022/05%20-%20loading%20Obj%20Models)
 + [Loading .obj models](https://github.com/totex/Learn-OpenGL-in-python/blob/master/ep15_obj_loading.py)
-+ [Augmented Reality using OpenCV, OpenGL and Blender](https://rdmilligan.wordpress.com/2015/10/15/augmented-reality-using-opencv-opengl-and-blender/)
++ [Augmented Reality using OpenCV, OpenGL and Blender](https://rdmilligan.wordpress.com/2015/10/15/augmented-reality-using-opencv-opengl-and-blender)
++ [3D ArUco Generator](https://github.com/imontesino/3D-aruco-generator)

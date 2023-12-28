@@ -3,6 +3,7 @@ from OpenGL.GL import *
 from OpenGL.GL.shaders import compileProgram, compileShader
 
 # Other imports
+import os
 import glfw
 import pyrr
 import numpy as np
@@ -20,15 +21,21 @@ class ShaderLoader:
 
     @staticmethod
     def load_shader_program(vertex_src_path, fragment_src_path):
+        script_dir = os.path.dirname(os.path.realpath(__file__))
+        vertex_src_path = os.path.join(script_dir, vertex_src_path)
+        fragment_src_path = os.path.join(script_dir, fragment_src_path)
+
         vertex_src = ShaderLoader.read_shader_file(vertex_src_path)
         fragment_src = ShaderLoader.read_shader_file(fragment_src_path)
 
-        return compileProgram(compileShader(vertex_src, GL_VERTEX_SHADER),
-                              compileShader(fragment_src, GL_FRAGMENT_SHADER))
+        return compileProgram(
+            compileShader(vertex_src, GL_VERTEX_SHADER),
+            compileShader(fragment_src, GL_FRAGMENT_SHADER)
+        )
 
 
 class ModelSetUp:
-    def __init__(self, file, texture_file=None) -> None:
+    def __init__(self, file=None, texture_file=None) -> None:
         # Set initial parameters
         self.VAO = glGenVertexArrays(1)
         self.VBO = glGenBuffers(1)
@@ -37,10 +44,11 @@ class ModelSetUp:
         self.model_buffer = None
 
         # Set model itself
-        self.model_loader(file)
+        if file:
+            self.model_loader(file)
+            self.model_parameters()
         if texture_file:
             self.texture_loader(texture_file, self.textures)
-        self.model_parameters()
 
     def model_loader(self, path):
         self.model_indices, self.model_buffer = ModelLoader.load_model(path)
@@ -100,11 +108,13 @@ class OpenGLContext:
     def __init__(self, pov, near, far, window_width, window_height) -> None:
         self.pov, self.near, self.far = pov, near, far
 
+        self.model_setup = None
+
         if not glfw.init():
             raise Exception("glfw can not be initialized!")
 
-        # Set window, hidden by default
-        glfw.window_hint(glfw.VISIBLE, glfw.FALSE)
+        # Set window
+        glfw.window_hint(glfw.VISIBLE, glfw.TRUE)
         self.window = glfw.create_window(window_width, window_height,
                                          "OpenGL Context", None, None)
         if not self.window:
@@ -124,6 +134,9 @@ class OpenGLContext:
         glEnable(GL_DEPTH_TEST)
 
     def update_model(self):
+        if self.model_setup is None or self.model_setup.model_indices is None:
+            return
+
         # Set up perspective projection matrix
         projection = pyrr.matrix44.create_perspective_projection_matrix(
             self.pov,
@@ -181,40 +194,9 @@ class OpenGLContext:
         # Swap the front and back buffers to display the rendered image
         glfw.swap_buffers(self.window)
 
-    # TODO In progress, sketch
+    # TODO
     def draw_background(self):
-        glEnable(GL_TEXTURE_2D)
-
-        texture_name = glGenTextures(1)
-        glBindTexture(GL_TEXTURE_2D, texture_name)
-
-        # Set texture parameters (wrap and filter)
-        glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE)
-        glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE)
-        glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST)
-        glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR)
-
-        # Load image and set texture data
-        frame = Image.open("media/robots.webp")
-        frame = frame.resize((self.window_width, self.window_height))
-        frame = frame.tobytes("raw", "RGBA")
-        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA, self.window_width,
-                     self.window_height, 0, GL_RGBA, GL_UNSIGNED_BYTE, frame)
-
-        # Draw the textured quad
-        glBegin(GL_QUADS)
-        glTexCoord2f(0.0, 0.0)
-        glVertex2f(-1.0, 1.0)
-        glTexCoord2f(0.0, 1.0)
-        glVertex2f(-1.0, -1.0)
-        glTexCoord2f(1.0, 1.0)
-        glVertex2f(1.0, -1.0)
-        glTexCoord2f(1.0, 0.0)
-        glVertex2f(1.0, 1.0)
-        glEnd()
-
-        # Disable texture
-        glDisable(GL_TEXTURE_2D)
+        pass
 
     def capture_frame(self):
         # Create an array to store the pixel data
@@ -248,7 +230,7 @@ if __name__ == "__main__":
     # Load model and background
     model_file = "models/pure_democracy.obj"
     model_texture_file = "models/pure_democracy.png"
-    background_ = "media/robots.webp"
+    background = "media/robots.webp"
 
     # Create an instance of OpenGLContext and initialize OpenGL parameters
     context = OpenGLContext(pov, near, far, frame_width, frame_height)

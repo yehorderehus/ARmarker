@@ -45,6 +45,7 @@ class MarkerDetection:
         ]
 
     # The receiving function
+    # TODO ORB feature detection
     def process(self, frame, asset_file, asset_extension,
                 screen_width, screen_height):
         return self.aruco_processing(frame, asset_file, asset_extension,
@@ -60,21 +61,14 @@ class MarkerDetection:
 
             # 4 loops for 4 corners
             for arucoCorner in self.arucoCorners:
-                if asset_extension in self.imread_extensions:
-                    asset = cv2.imread(asset_file)
+                if asset_extension in self.imread_extensions or \
+                    asset_extension in self.videocapture_extensions:
                     processed_frame = FrameAugmentation().plain_augmentation(
-                        arucoCorner, processed_frame, asset)
-
-                # TODO full length video augmentation
-                elif asset_extension in self.videocapture_extensions:
-                    _, asset = cv2.VideoCapture(asset_file).read()
-                    processed_frame = FrameAugmentation().plain_augmentation(
-                        arucoCorner, processed_frame, asset)
+                        arucoCorner, processed_frame, asset_file)
 
                 elif asset_extension in self.opengl_extensions:
-                    asset = asset_file  # TODO call loading model here
-                    processed_frame = FrameAugmentation().volumetric_augmentation(
-                        arucoCorner, processed_frame, asset,
+                    processed_frame = FrameAugmentation().model_augmentation(
+                        arucoCorner, processed_frame, asset_file,
                         screen_width, screen_height)
 
                 else:
@@ -89,12 +83,12 @@ class MarkerDetection:
             parameters=self.arucoParams)
 
         if self.arucoIds is not None:
-            self.aruco_parameters(frame)
+            self.aruco_properties(frame)
 
     def aruco_np_corners(self, arucoCorner):
         return np.int32(arucoCorner).reshape(-1, 2)
 
-    def aruco_parameters(self, frame):
+    def aruco_properties(self, frame):
         for arucoCorner in self.arucoCorners:
             np_aruco_corners = self.aruco_np_corners(arucoCorner)
 

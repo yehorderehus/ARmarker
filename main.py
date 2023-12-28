@@ -10,21 +10,18 @@ from kivymd.uix.dialog import MDDialog
 from kivymd.uix.button import MDRaisedButton
 
 # Other imports
-import webbrowser
 import cv2
+import webbrowser
 from plyer import filechooser
 
 # Common imports
 from main_helper import main_helper
 from detection import MarkerDetection
 
-
-class UserApp(MDApp):  # TODO optimization, work with memory
+class UserApp(MDApp):
     def __init__(self) -> None:
         super().__init__()
 
-        # Set supported extensions
-        # TODO Most imread and videocapture extensions were NOT tested
         self.imread_extensions = [
             "bmp", "jpeg", "jpg", "jpe", "jp2",
             "png", "webp", "pbm", "pgm", "ppm",
@@ -67,68 +64,51 @@ class UserApp(MDApp):  # TODO optimization, work with memory
             self.root.ids.live_frame.texture = None
         else:
             self.cap = cv2.VideoCapture(self.cap_index)
-
-            # If 'fps' is not available in metadata, set a default frame rate
-            try:
-                fps = self.cap.get(cv2.CAP_PROP_FPS)
-            except KeyError:
-                fps = 30
+            fps = self.get_fps(self.cap)
 
             def update_live(dt):
                 ret, frame = self.cap.read()
 
                 if ret:
-                    # Convert and update the live frame
                     self.root.ids.live_frame.texture = \
                         self.frame_to_texture(frame)
 
-            # Update at specified FPS through kivy.clock
-            self.update_live_event = Clock.schedule_interval(
-                update_live, 1.0 / fps)
+            if hasattr(self, 'cap') and self.cap.isOpened():
+                self.update_live_event = Clock.schedule_interval(
+                    update_live, 1.0 / fps)
 
-    def update_static_video(self, media=None):
-        if not media:
+    def update_static_video(self):
+        if not self.media_file:
             return
 
-        # Open the video file and initialize a flag to control video looping
-        self.cap_video = cv2.VideoCapture(media)
-        self.video_loop = True
-
-        # If 'fps' is not available in metadata, set a default frame rate
-        try:
-            fps = self.cap_video.get(cv2.CAP_PROP_FPS)
-        except KeyError:
-            fps = 30
+        self.cap_video = cv2.VideoCapture(self.media_file)
+        fps = self.get_fps(self.cap_video)
 
         def update_video(dt):
-            if hasattr(self, 'cap_video') and self.video_loop:
-                ret, frame = self.cap_video.read()
+            ret, frame = self.cap_video.read()
 
-                if ret:
-                    # Convert and update the static frame
-                    self.root.ids.static_frame.texture = \
-                        self.frame_to_texture(frame)
+            if ret:
+                self.root.ids.static_frame.texture = \
+                    self.frame_to_texture(frame)
+            else:
+                self.cap_video.set(cv2.CAP_PROP_POS_FRAMES, 0)
 
-                else:
-                    # Video ended, release the video capture
-                    self.cap_video.set(cv2.CAP_PROP_POS_FRAMES, 0)
+        if hasattr(self, 'cap_video'):
+            self.update_static_video_event = Clock.schedule_interval(
+                update_video, 1.0 / fps)
 
-        # Update at specified FPS through kivy.clock
-        self.update_static_video_event = Clock.schedule_interval(
-            update_video, 1.0 / fps)
-
-    def update_static_image(self, media=None):
-        if not media:
+    def update_static_image(self):
+        if not self.media_file:
             return
+        
+        if hasattr(self, 'update_static_video_event'):
+            self.cap_video.release()
+            Clock.unschedule(self.update_static_video_event)
 
-        # Read the image from the file path
-        frame = cv2.imread(media)
-
-        # Convert and update the static frame
+        frame = cv2.imread(self.media_file)
         self.root.ids.static_frame.texture = self.frame_to_texture(frame)
 
     def frame_to_texture(self, frame):
-        # Process the frame and flip it vertically
         frame = self.marker_detection.process(
             frame, self.asset_file, self.asset_extension,
             self.screen_width, self.screen_height)
@@ -137,7 +117,8 @@ class UserApp(MDApp):  # TODO optimization, work with memory
         # Convert the OpenCV frame to Kivy texture
         buf = frame.tobytes()
         texture = Texture.create(size=(frame.shape[1],
-                                       frame.shape[0]), colorfmt='bgr')
+                                       frame.shape[0]),
+                                       colorfmt='bgr')
         texture.blit_buffer(buf, colorfmt='bgr', bufferfmt='ubyte')
 
         return texture
@@ -146,77 +127,104 @@ class UserApp(MDApp):  # TODO optimization, work with memory
         file_path = filechooser.open_file()
 
         if not file_path:
+            self.error_popup("File Error", "No file selected")
+            del file_path
             return None, None
 
-        file_extension = file_path[0].split(".")[-1].lower()
+        file_extension = file_path[0].split(".")[-1].lower()        
+        
         return file_path[0], file_extension
 
     def media_select_callback(self):
         self.media_file, self.media_extension = self.file_select()
 
-        if self.media_file and self.media_extension:
-
-            self.video_loop = False  # Stop looping
-
-            if self.media_extension in self.imread_extensions:
-                self.update_static_image(self.media_file)
-
-            elif self.media_extension in self.videocapture_extensions:
-                self.update_static_video(self.media_file)
-
-            else:
-                self.video_loop = True  # Continue looping if not supported
+        if self.media_extension not in self.imread_extensions + \
+            self.videocapture_extensions \
+            and self.media_extension is not None:
                 self.error_popup("File Error", "Unsupported file type")
+                del self.media_file, self.media_extension
+                return 
+
+        self.update_static()
 
     def asset_select_callback(self):
         self.asset_file, self.asset_extension = self.file_select()
 
-        if self.asset_file and self.asset_extension:
-
-            self.video_loop = False  # Stop looping
-
-            if (
-                self.asset_extension in self.imread_extensions or
-                self.asset_extension in self.videocapture_extensions
-            ):
-                if self.media_extension in self.imread_extensions:
-                    self.update_static_image(self.media_file)
-                elif self.media_extension in self.videocapture_extensions:
-                    self.update_static_video(self.media_file)
-
-            elif self.asset_extension in self.opengl_extensions:
-                if self.media_extension in self.imread_extensions:
-                    self.update_static_image(self.media_file)
-                elif self.media_extension in self.videocapture_extensions:
-                    self.update_static_video(self.media_file)
-
-            else:
-                self.video_loop = True  # Continue looping if not supported
+        if self.asset_extension not in self.imread_extensions + \
+            self.videocapture_extensions + self.opengl_extensions \
+            and self.asset_extension is not None:
                 self.error_popup("File Error", "Unsupported file type")
+                del self.asset_file, self.asset_extension
+                return
+
+        if self.asset_extension in self.imread_extensions:
+            self.asset_file = cv2.imread(self.asset_file)
+
+        elif self.asset_extension in self.videocapture_extensions:
+            if hasattr(self, 'cap_asset'):
+                self.cap_asset.release()
+                Clock.unschedule(self.update_video_augment_event)
+
+            self.cap_asset = cv2.VideoCapture(self.asset_file)
+            fps = self.get_fps(self.cap_asset)
+
+            def update_video_augment(dt):
+                ret, frame = self.cap_asset.read()
+
+                if ret:
+                    self.asset_file = frame
+                    if not hasattr(self, 'cap_video') and \
+                        not hasattr(self, 'cap'):
+                            self.update_static()
+                else:
+                    self.cap_asset.set(cv2.CAP_PROP_POS_FRAMES, 0)
+
+            if self.cap_asset.isOpened():
+                self.update_video_augment_event = Clock.schedule_interval(
+                    update_video_augment, 1.0 / fps)
+
+        elif self.asset_extension in self.opengl_extensions:
+            # TODO Load the model
+            pass
+        
+        self.update_static()
+
+    def update_static(self):
+        if self.media_extension in self.imread_extensions:
+            self.update_static_image()
+
+        elif self.media_extension in self.videocapture_extensions:
+            self.update_static_video()
+    
+    def get_fps(self, cap):
+        try:
+            fps = cap.get(cv2.CAP_PROP_FPS)
+        except KeyError:
+            fps = 30
+
+        return fps
 
     def model_rotate_callback(self):
-        # Toggle model rotation
+        # TODO Toggle model rotation
         pass
 
     def cam_flip_callback(self):
-        # Switch between camera index 0 and 1
         if self.cap_index == 1:
             self.cap_index = 0
         else:
             self.cap_index = 1
 
-        # Release and reopen the camera
         self.cap.release()
         self.live_broadcast()
 
+    # TODO more, for optimization
     def change_screen_callback(self, current_screen):
-        if current_screen != "live":
-            if hasattr(self, "update_live_event"):
-                self.cap.release()
-                del self.update_live_event
-        else:
-            if not hasattr(self, 'update_live_event'):
-                self.live_broadcast()
+        if current_screen != "live" and hasattr(self, 'cap'):
+            del self.cap
+            Clock.unschedule(self.update_live_event)
+
+        elif current_screen == "live":
+            self.live_broadcast()
 
     def error_popup(self, error_cause, error_message):
         dialog = MDDialog(
