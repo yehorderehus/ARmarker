@@ -54,5 +54,5 @@ class FrameAugmentation:
 
         return shot + augment
 
-    def model_augmentation(self, bbox, shot, augment, width, height):
+    def model_augmentation(self, bbox, shot, augment):
         pass

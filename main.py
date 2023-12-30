@@ -52,7 +52,7 @@ class UserApp(MDApp):
         Window.bind(on_resize=lambda instance,
                     width, height: setattr(self, 'screen_width', width)
                     or setattr(self, 'screen_height', height))
-
+        
         # Start execution by accessing the camera
         self.live_broadcast()
 
@@ -110,8 +110,7 @@ class UserApp(MDApp):
 
     def frame_to_texture(self, frame):
         frame = self.marker_detection.process(
-            frame, self.asset_file, self.asset_extension,
-            self.screen_width, self.screen_height)
+            frame, self.asset_file, self.asset_extension)
         frame = cv2.flip(frame, 0)
 
         # Convert the OpenCV frame to Kivy texture

@@ -46,13 +46,10 @@ class MarkerDetection:
 
     # The receiving function
     # TODO ORB feature detection
-    def process(self, frame, asset_file, asset_extension,
-                screen_width, screen_height):
-        return self.aruco_processing(frame, asset_file, asset_extension,
-                                     screen_width, screen_height)
+    def process(self, frame, asset_file, asset_extension):
+        return self.aruco_processing(frame, asset_file, asset_extension)
 
-    def aruco_processing(self, frame, asset_file, asset_extension,
-                         screen_width, screen_height):
+    def aruco_processing(self, frame, asset_file, asset_extension):
         processed_frame = frame.copy()  # Copy the frame to avoid mixing up
 
         # Loop through aruco dictionaries and aruco corners, apply augmentation
@@ -68,8 +65,7 @@ class MarkerDetection:
 
                 elif asset_extension in self.opengl_extensions:
                     processed_frame = FrameAugmentation().model_augmentation(
-                        arucoCorner, processed_frame, asset_file,
-                        screen_width, screen_height)
+                        arucoCorner, processed_frame, asset_file)
 
                 else:
                     processed_frame = self.aruco_highlightning(
