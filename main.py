@@ -54,9 +54,9 @@ class UserApp(MDApp):
                     or setattr(self, 'screen_height', height))
         
         # Start execution by accessing the camera
-        self.live_broadcast()
+        self.update_live_broadcast()
 
-    def live_broadcast(self):
+    def update_live_broadcast(self):
         if not cv2.VideoCapture(self.cap_index).isOpened():
             self.error_popup("Camera Error",
                              "Unable to access the camera. "
@@ -94,16 +94,12 @@ class UserApp(MDApp):
                 self.cap_video.set(cv2.CAP_PROP_POS_FRAMES, 0)
 
         if hasattr(self, 'cap_video'):
-            self.update_static_video_event = Clock.schedule_interval(
+            self.update_video_event = Clock.schedule_interval(
                 update_video, 1.0 / fps)
 
     def update_static_image(self):
         if not self.media_file:
             return
-        
-        if hasattr(self, 'update_static_video_event'):
-            self.cap_video.release()
-            Clock.unschedule(self.update_static_video_event)
 
         frame = cv2.imread(self.media_file)
         self.root.ids.static_frame.texture = self.frame_to_texture(frame)
@@ -157,7 +153,12 @@ class UserApp(MDApp):
                 return
 
         if self.asset_extension in self.imread_extensions:
+            if hasattr(self, 'update_video_augment_event'):
+                self.cap_asset.release()
+                Clock.unschedule(self.update_video_augment_event)
+
             self.asset_file = cv2.imread(self.asset_file)
+            self.update_static()
 
         elif self.asset_extension in self.videocapture_extensions:
             if hasattr(self, 'cap_asset'):
@@ -172,9 +173,8 @@ class UserApp(MDApp):
 
                 if ret:
                     self.asset_file = frame
-                    if not hasattr(self, 'cap_video') and \
-                        not hasattr(self, 'cap'):
-                            self.update_static()
+                    if self.media_extension in self.imread_extensions:
+                        self.update_static_image()
                 else:
                     self.cap_asset.set(cv2.CAP_PROP_POS_FRAMES, 0)
 
@@ -185,11 +185,13 @@ class UserApp(MDApp):
         elif self.asset_extension in self.opengl_extensions:
             # TODO Load the model
             pass
-        
-        self.update_static()
 
     def update_static(self):
         if self.media_extension in self.imread_extensions:
+            if hasattr(self, 'update_video_event'):
+                self.cap_video.release()
+                Clock.unschedule(self.update_video_event)
+
             self.update_static_image()
 
         elif self.media_extension in self.videocapture_extensions:
@@ -214,7 +216,7 @@ class UserApp(MDApp):
             self.cap_index = 1
 
         self.cap.release()
-        self.live_broadcast()
+        self.update_live_broadcast()
 
     # TODO more, for optimization
     def change_screen_callback(self, current_screen):
@@ -223,7 +225,7 @@ class UserApp(MDApp):
             Clock.unschedule(self.update_live_event)
 
         elif current_screen == "live":
-            self.live_broadcast()
+            self.update_live_broadcast()
 
     def error_popup(self, error_cause, error_message):
         dialog = MDDialog(
