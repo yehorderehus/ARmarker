@@ -1,4 +1,3 @@
-# Primary imports
 import cv2
 import numpy as np
 from PIL import Image
@@ -9,12 +8,6 @@ class FrameAugmentation:
         pass
 
     def plain_augmentation(self, bbox, shot, augment):
-        # Additional check for video augment case
-        # - some frames are passed as strings (don't know why)
-        if isinstance(augment, str):
-            print("Caught string frame")
-            return shot
-
         top_left = bbox[0][0][0], bbox[0][0][1]
         top_right = bbox[0][1][0], bbox[0][1][1]
         bottom_right = bbox[0][2][0], bbox[0][2][1]

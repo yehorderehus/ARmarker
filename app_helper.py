@@ -1,4 +1,4 @@
-main_helper = """
+app_helper = """
 <ContentNavigationDrawer>:
     MDList:
         spacing: "12dp"
@@ -48,14 +48,14 @@ main_helper = """
                 theme_text_color: "Secondary"
                 on_press:
                     root.nav_drawer.set_state("close")
-                    app.open_url("# to set")
+                    app.open_url_callback("# to set")
             OneLineListItem:
                 text: "Rate App"
                 divider: None
                 theme_text_color: "Secondary"
                 on_press:
                     root.nav_drawer.set_state("close")
-                    app.open_url("# to set")
+                    app.open_url_callback("# to set")
 
 MDScreen:
     MDNavigationLayout:
@@ -77,7 +77,7 @@ MDScreen:
                 MDIconButton:
                     icon: "cube-outline"
                     pos_hint: {"bottom": 1}
-                    on_release: app.asset_select_callback()
+                    on_release: app.file_select_callback("asset")
                 MDIconButton:
                     icon: "record"
                     pos_hint: {"bottom": 1, "center_x": .5}
@@ -102,7 +102,7 @@ MDScreen:
                 MDIconButton:
                     icon: "cube-outline"
                     pos_hint: {"bottom": 1}
-                    on_release: app.asset_select_callback()
+                    on_release: app.file_select_callback("asset")
                 MDIconButton:
                     icon: "record"
                     pos_hint: {"bottom": 1, "center_x": .5}
@@ -110,7 +110,7 @@ MDScreen:
                 MDIconButton:
                     icon: "file-image-plus"
                     pos_hint: {"bottom": 1, "right": 1}
-                    on_release: app.media_select_callback()
+                    on_release: app.file_select_callback("media")
             MDScreen:
                 name: "captures"
                 MDIconButton:

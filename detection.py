@@ -1,24 +1,14 @@
-# Primary imports
 import cv2
 import numpy as np
 
-# Common imports
 from augmentation import FrameAugmentation
 from calibration import CameraCalibration
 
 
 class MarkerDetection:
-    def __init__(self,
-                 imread_extensions,
-                 videocapture_extensions,
-                 opengl_extensions) -> None:
+    def __init__(self, extensions) -> None:
+        self.extensions = extensions
 
-        # Import supported extensions
-        self.imread_extensions = imread_extensions
-        self.videocapture_extensions = videocapture_extensions
-        self.opengl_extensions = opengl_extensions
-
-        # Set up aruco
         self.arucoParams = cv2.aruco.DetectorParameters()
         self.aruco_dictionaries = [
             cv2.aruco.DICT_4X4_50,
@@ -46,26 +36,25 @@ class MarkerDetection:
 
     # The receiving function
     # TODO ORB feature detection
-    def process(self, frame, asset_file, asset_extension):
-        return self.aruco_processing(frame, asset_file, asset_extension)
+    def process(self, frame, the_asset, asset_extension):
+        return self.aruco_processing(frame, the_asset, asset_extension)
 
-    def aruco_processing(self, frame, asset_file, asset_extension):
+    def aruco_processing(self, frame, the_asset, asset_extension):
         processed_frame = frame.copy()  # Copy the frame to avoid mixing up
 
-        # Loop through aruco dictionaries and aruco corners, apply augmentation
         for arucoDict in self.aruco_dictionaries:
             self.aruco_detection(frame, arucoDict)
 
             # 4 loops for 4 corners
             for arucoCorner in self.arucoCorners:
-                if asset_extension in self.imread_extensions or \
-                    asset_extension in self.videocapture_extensions:
+                if asset_extension in self.extensions["imread"] \
+                    or asset_extension in self.extensions["videocapture"]:
                     processed_frame = FrameAugmentation().plain_augmentation(
-                        arucoCorner, processed_frame, asset_file)
+                        arucoCorner, processed_frame, the_asset)
 
-                elif asset_extension in self.opengl_extensions:
+                elif asset_extension in self.extensions["opengl"]:
                     processed_frame = FrameAugmentation().model_augmentation(
-                        arucoCorner, processed_frame, asset_file)
+                        arucoCorner, processed_frame, the_asset)
 
                 else:
                     processed_frame = self.aruco_highlightning(
@@ -79,12 +68,12 @@ class MarkerDetection:
             parameters=self.arucoParams)
 
         if self.arucoIds is not None:
-            self.aruco_properties(frame)
+            self.aruco_properties()
 
     def aruco_np_corners(self, arucoCorner):
         return np.int32(arucoCorner).reshape(-1, 2)
 
-    def aruco_properties(self, frame):
+    def aruco_properties(self):
         for arucoCorner in self.arucoCorners:
             np_aruco_corners = self.aruco_np_corners(arucoCorner)
 
